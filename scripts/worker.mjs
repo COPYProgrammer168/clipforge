@@ -12,6 +12,11 @@ import {
 import { transcribe } from "./pipeline/transcribe.mjs";
 import { planClips, transcriptUsable } from "./pipeline/score.mjs";
 import { aspectSize, renderClip } from "./pipeline/render.mjs";
+import {
+  deleteJobBlobs,
+  publishClipArtifacts,
+  usesBlobStorage,
+} from "./pipeline/storage.mjs";
 
 try {
   process.loadEnvFile(".env.local");
@@ -157,9 +162,9 @@ async function insertClip(jobId, userId, index, clip, options) {
       clip.score,
       options.aspectRatio,
       options.captionStyle,
-      `/clips/${jobId}/${clip.videoFile}`,
-      `/clips/${jobId}/${clip.thumbnailFile}`,
-      `/clips/${jobId}/${clip.srtFile}`,
+      clip.blobUrl,
+      clip.thumbnailUrl,
+      clip.srtUrl,
       clip.captionText,
     ],
   });
@@ -269,6 +274,7 @@ async function processJob(jobId) {
     const { width, height } = aspectSize(options.aspectRatio);
     await setStage(jobId, "rendering", 70);
 
+    const renderedClips = [];
     for (let index = 0; index < plan.length; index += 1) {
       const item = plan[index];
       const baseName = `clip-${String(index + 1).padStart(2, "0")}`;
@@ -289,16 +295,39 @@ async function processJob(jobId) {
         captionTextFallback: item.title,
       });
 
-      await insertClip(jobId, job.userId, index + 1, {
-        ...item,
-        ...rendered,
-      }, options);
+      renderedClips.push({ item, rendered });
 
       await setStage(
         jobId,
         "rendering",
-        70 + ((index + 1) / plan.length) * 28
+        70 + ((index + 1) / plan.length) * 22
       );
+    }
+
+    const publishToBlob = usesBlobStorage();
+    if (publishToBlob) {
+      await setStage(jobId, "uploading", 93);
+    }
+
+    for (let index = 0; index < renderedClips.length; index += 1) {
+      const { item, rendered } = renderedClips[index];
+      const urls = await publishClipArtifacts({ jobId, outDir, rendered });
+
+      await insertClip(
+        jobId,
+        job.userId,
+        index + 1,
+        { ...item, ...rendered, ...urls },
+        options
+      );
+
+      if (publishToBlob) {
+        await setStage(
+          jobId,
+          "uploading",
+          93 + ((index + 1) / renderedClips.length) * 6
+        );
+      }
     }
 
     await db.execute({
@@ -316,6 +345,9 @@ async function processJob(jobId) {
 
     progressState.delete(jobId);
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    if (publishToBlob) {
+      await rm(outDir, { recursive: true, force: true }).catch(() => {});
+    }
     log(`done ${jobId} with ${plan.length} clips`);
   } catch (error) {
     const message = String(error?.message ?? error).slice(0, 800);
@@ -328,6 +360,7 @@ async function processJob(jobId) {
     });
     progressState.delete(jobId);
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    await deleteJobBlobs(jobId).catch(() => {});
     log(`failed ${jobId}: ${message}`);
   }
 }

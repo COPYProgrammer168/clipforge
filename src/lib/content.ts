@@ -27,7 +27,7 @@ export const faqs = [
   },
   {
     q: "Where are my files stored?",
-    a: "Job and clip metadata live in Postgres. Source videos, rendered MP4s, SRT files and thumbnails live in Vercel Blob. Deleting a job removes its clips; source blobs are deleted automatically after a successful job.",
+    a: "Job and clip metadata live in the configured database (SQLite by default, or hosted libSQL/Turso). Rendered MP4s, SRT files and thumbnails stay on local disk, or are published to Vercel Blob when CLIP_STORAGE=blob. Uploaded source files use Vercel Blob. Deleting a job removes its rendered clips and uploaded source.",
   },
 ];
 

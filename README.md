@@ -19,7 +19,7 @@ ClipForge is a self-hosted AI clipping studio. Give it a public video URL or an 
 - **Three caption presets** — bold, clean, and boxed, with word-timed cues that break on punctuation and pauses.
 - **Multilingual transcription** — auto-detect plus 13 selectable languages, including a dedicated Khmer model path with Khmer font shaping and line wrapping.
 - **Production-minded pipeline** — SQLite-backed job queue, atomic claiming, stale-lock recovery, retry limits, and live stage progress in the studio.
-- **Local-first** — media processing runs on your machine or your own server; only optional browser uploads are stored in Vercel Blob.
+- **Local-first** — media processing runs on your machine or your own server. Browser uploads, and optionally rendered clips, can be stored in Vercel Blob.
 
 ## How it works
 
@@ -94,12 +94,13 @@ Copy `.env.example` to `.env.local` and adjust as needed. All worker variables a
 | --- | --- | --- |
 | `DATABASE_URL` | `file:./clipforge.db` | SQLite file used by the app, worker, and drizzle-kit. Use a `libsql://` URL for hosted libSQL/Turso. |
 | `DATABASE_AUTH_TOKEN` | unset | Auth token for hosted libSQL/Turso. |
-| `BLOB_READ_WRITE_TOKEN` | unset | Vercel Blob token for browser uploads. Not required for URL jobs. |
+| `BLOB_READ_WRITE_TOKEN` | unset | Vercel Blob token for browser uploads and Blob clip publishing. Not required for URL jobs with local clips. |
 | `WHISPER_MODEL` | `base` | faster-whisper model: `tiny`, `base`, `small`, `medium`, `large-v3`. |
 | `WHISPER_MODEL_KM` | `.models/faster-whisper-base-khmer` | Optional CT2 folder for the fine-tuned Khmer model. If missing, Khmer jobs use `WHISPER_MODEL`. |
 | `POLL_SECONDS` | `3` | Queue poll interval. |
 | `WORK_ROOT` | `.work/jobs` | Scratch directory for downloads and extracted audio; cleaned after each job. |
-| `CLIPS_ROOT` | `public/clips` | Where rendered clips are written and served from. |
+| `CLIPS_ROOT` | `public/clips` | Where rendered clips are written and served from in local mode. |
+| `CLIP_STORAGE` | `local` | `local` writes clips to `CLIPS_ROOT`; `blob` publishes the MP4, SRT, and JPEG to Vercel Blob (requires `BLOB_READ_WRITE_TOKEN`). |
 | `MIN_CLIP_SECONDS` | `16` | Minimum clip length. |
 | `MAX_CLIP_SECONDS` | `52` | Maximum clip length. |
 | `TARGET_CLIP_SECONDS` | `30` | Preferred clip length used during ranking. |
@@ -154,13 +155,25 @@ The repository includes a Dockerfile and a Render Blueprint. The image bundles N
 
 The service runs `node scripts/render-start.mjs`, which supervises Next.js and the worker in one container. Because the database and rendered clips live on a local disk, run a single instance. Video processing is CPU-bound; larger Whisper models improve accuracy at the cost of speed.
 
+### Optional: split web and worker
+
+To run without a paid disk, host the web app separately and run the worker on a machine you control:
+
+1. Create a hosted libSQL database (for example Turso) and a Vercel Blob store.
+2. Set `DATABASE_URL`, `DATABASE_AUTH_TOKEN`, and `BLOB_READ_WRITE_TOKEN` on the web service.
+3. On the worker, set the same variables plus `CLIP_STORAGE=blob` and a local `WORK_ROOT`.
+4. Run `npm run db:push` once against the hosted database, then `npm run worker`.
+
+Rendered clips are uploaded as public Blob objects and removed when the job is deleted. Vercel's Hobby plan is non-commercial and Blob storage/transfer is limited; use paid hosting for production traffic.
+
 ## Operational notes
 
 - Framing is a center crop; there is no face tracking or keyframe pass. Check the crop when the subject sits off-center.
 - Clip selection is deterministic and fully offline; changing clip length bounds or transcript quality changes the result.
 - Public-link downloads rely on yt-dlp. Some platforms and datacenter IPs may require cookies or a JavaScript runtime, and extractors can break when sites change.
 - Uploads are capped at 2 GB and sources at 2 hours. Deleting a job removes its rendered files.
-- The worker is designed around a single SQLite database and a single local clip store. For horizontal scaling, move to hosted libSQL and object storage and update the worker's output path.
+- The worker uses a single SQLite database and a local clip store by default. For multiple instances, use hosted libSQL and `CLIP_STORAGE=blob`; workers share the job queue through atomic claims.
+- Blob-published clips use public Vercel Blob URLs.
 
 ## License
 
