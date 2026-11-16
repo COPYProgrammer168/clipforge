@@ -1,0 +1,64 @@
+{
+  "name": "clipforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI video clipping studio: upload long videos, get highlight-scored vertical clips with captions",
+  "license": "MIT",
+  "keywords": [
+    "ai-video",
+    "clipping",
+    "captions",
+    "whisper",
+    "ffmpeg",
+    "nextjs",
+    "tailwindcss"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-all.mjs",
+    "dev:next": "next dev",
+    "worker": "node scripts/worker.mjs",
+    "build": "next build",
+    "start": "next start",
+    "start:render": "node scripts/render-start.mjs",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
+    "model:khmer": "python -c \"from ctranslate2.converters.transformers import main; main()\" --model sengtha/whisper-base-khmer --output_dir .models/faster-whisper-base-khmer --quantization int8 --force",
+    "check": "npm run lint && npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.3.0",
+    "@libsql/client": "^0.18.0",
+    "@vercel/blob": "^2.9.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cn": "^0.5.2",
+    "drizzle-orm": "^0.45.4",
+    "lucide-react": "^1.6.0",
+    "next": "16.3.5",
+    "next-themes": "^0.4.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "shadcn": "^4.1.0",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.5.0",
+    "tw-animate-css": "^1.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.5",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

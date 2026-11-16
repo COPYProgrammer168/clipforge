@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: clipforge
+    runtime: docker
+    plan: standard
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: clipforge-data
+      mountPath: /var/data
+      sizeGB: 10
+    envVars:
+      - key: DATABASE_URL
+        value: file:/var/data/clipforge.db
+      - key: HF_HOME
+        value: /var/data/hf-cache
+      - key: WHISPER_MODEL
+        value: base
+      - key: WHISPER_MODEL_KM
+        value: /var/data/models/faster-whisper-base-khmer
+      - key: POLL_SECONDS
+        value: "3"
+      - key: WORK_ROOT
+        value: /var/data/work
+      - key: CLIPS_ROOT
+        value: /var/data/clips
+      - key: MIN_CLIP_SECONDS
+        value: "16"
+      - key: MAX_CLIP_SECONDS
+        value: "52"
+      - key: TARGET_CLIP_SECONDS
+        value: "30"
