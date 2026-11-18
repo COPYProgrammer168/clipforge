@@ -27,7 +27,7 @@ export async function renderClip(options) {
   } = options;
 
   const duration = Math.max(2, Math.round(durationSeconds));
-  const cues = buildCues(words ?? [], startSeconds, startSeconds + duration);
+  const cues = buildCues(words ?? [], startSeconds, startSeconds + duration, language);
 
   const srtName = `${baseName}.srt`;
   const assName = `${baseName}.ass`;

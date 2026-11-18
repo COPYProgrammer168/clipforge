@@ -27,7 +27,7 @@ services:
       - key: CLIP_STORAGE
         value: r2
       - key: WORKER_DISABLED
-        value: "1"
+        value: "0"
       - key: HF_HOME
         value: /tmp/hf-cache
       - key: WHISPER_MODEL

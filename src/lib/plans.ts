@@ -21,8 +21,8 @@ export const DEFAULT_CAPTION_COLORS: CaptionColors = {
 };
 
 export const LANGUAGES = [
-  { value: "auto", label: "Auto-detect" },
   { value: "en", label: "English" },
+  { value: "auto", label: "Auto-detect" },
   { value: "es", label: "Spanish" },
   { value: "pt", label: "Portuguese" },
   { value: "fr", label: "French" },

@@ -13,6 +13,7 @@ RUN apt-get update \
         libgomp1 \
         fonts-liberation \
         fonts-noto-core \
+        fonts-noto-extra \
         python3 \
         python3-venv \
     && rm -rf /var/lib/apt/lists/*

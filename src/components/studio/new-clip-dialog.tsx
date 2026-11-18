@@ -236,7 +236,7 @@ export function NewClipDialog({
   const [captionColors, setCaptionColors] = useState<CaptionColors>(
     DEFAULT_CAPTION_COLORS
   );
-  const [language, setLanguage] = useState("auto");
+  const [language, setLanguage] = useState("en");
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "uploading" | "creating">("idle");
   const [uploadPercent, setUploadPercent] = useState(0);

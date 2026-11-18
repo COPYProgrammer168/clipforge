@@ -63,8 +63,62 @@ function usesKhmer(language, cues) {
   return cues.some((cue) => KHMER_SCRIPT.test(cue.text));
 }
 
-function wrapText(text, maxChars) {
+function isKhmerText(text) {
+  return KHMER_SCRIPT.test(text);
+}
+
+/**
+ * Join word tokens. Khmer script doesn't use spaces between words
+ * the way Latin scripts do — join Khmer tokens without spaces.
+ */
+function joinWords(texts, khmer) {
+  if (!khmer) return texts.join(" ");
+  // For Khmer: join without spaces when both sides are Khmer script,
+  // keep space when mixing with Latin/digits.
+  let result = "";
+  for (let i = 0; i < texts.length; i++) {
+    if (i === 0) {
+      result = texts[i];
+      continue;
+    }
+    const prevIsKhmer = isKhmerText(texts[i - 1]);
+    const currIsKhmer = isKhmerText(texts[i]);
+    // No space between consecutive Khmer tokens
+    if (prevIsKhmer && currIsKhmer) {
+      result += texts[i];
+    } else {
+      result += ` ${texts[i]}`;
+    }
+  }
+  return result;
+}
+
+function wrapText(text, maxChars, khmer) {
   if (text.length <= maxChars) return text;
+
+  if (khmer) {
+    // For Khmer: break by character count at safe breakpoints
+    // Khmer break opportunities are after certain characters or before consonants
+    const KHMER_BREAK = /[\u17D4\u17D5\u17D6\s,.\u200B]/;
+    const lines = [];
+    let remaining = text;
+    while (remaining.length > maxChars) {
+      let breakAt = -1;
+      // Look backwards from maxChars for a break opportunity
+      for (let i = maxChars; i >= Math.floor(maxChars * 0.5); i--) {
+        if (KHMER_BREAK.test(remaining[i])) {
+          breakAt = i + 1;
+          break;
+        }
+      }
+      // No good break found, force break at maxChars
+      if (breakAt === -1) breakAt = maxChars;
+      lines.push(remaining.slice(0, breakAt).trim());
+      remaining = remaining.slice(breakAt).trim();
+    }
+    if (remaining) lines.push(remaining);
+    return lines.join("\\N");
+  }
 
   const lines = [];
   let line = "";
@@ -95,16 +149,22 @@ function wrapText(text, maxChars) {
   return wrapped.join("\\N");
 }
 
-export function buildCues(words, start, end) {
+export function buildCues(words, start, end, language) {
   const cues = [];
   let group = [];
+  const khmer = language === "km" || words.some((w) => KHMER_SCRIPT.test(w.text));
+
+  // Khmer text packs more densely, limit group size to prevent overcrowding
+  const maxGroupWords = khmer ? 4 : 6;
+  const maxGroupDuration = khmer ? 2.5 : 3;
 
   const flush = () => {
     if (group.length === 0) return;
-    const text = group
-      .map((word) => word.text)
-      .join(" ")
-      .replace(/\s+/g, " ")
+    const text = joinWords(
+      group.map((word) => word.text),
+      khmer
+    )
+      .replace(/\s{2,}/g, " ")
       .trim();
     const cueStart = clamp(group[0].start - start, 0, end - start);
     const cueEnd = clamp(
@@ -138,8 +198,8 @@ export function buildCues(words, start, end) {
     group.push(word);
 
     if (
-      group.length >= 6 ||
-      word.end - group[0].start >= 3 ||
+      group.length >= maxGroupWords ||
+      word.end - group[0].start >= maxGroupDuration ||
       /[.!?\u3002\u17D4\u17D5]$/.test(word.text)
     ) {
       flush();
@@ -226,15 +286,35 @@ function karaokeTimeline(cue) {
 }
 
 function karaokeEventText(cue, activeIndex, options) {
-  return (cue.words ?? [])
-    .map((word, wordIndex) => {
-      const color = assColor(
-        wordIndex === activeIndex ? options.highlight : options.text
-      );
-      const text = options.uppercase ? word.text.toUpperCase() : word.text;
-      return `{\\1c${color}}${escapeAss(text)}`;
-    })
-    .join(" ");
+  const parts = (cue.words ?? []).map((word, wordIndex) => {
+    const color = assColor(
+      wordIndex === activeIndex ? options.highlight : options.text
+    );
+    const text = options.uppercase ? word.text.toUpperCase() : word.text;
+    return `{\\1c${color}}${escapeAss(text)}`;
+  });
+
+  // For Khmer karaoke, join without spaces between Khmer tokens
+  if (options.khmer) {
+    let result = "";
+    const words = cue.words ?? [];
+    for (let i = 0; i < parts.length; i++) {
+      if (i === 0) {
+        result = parts[i];
+        continue;
+      }
+      const prevIsKhmer = isKhmerText(words[i - 1]?.text ?? "");
+      const currIsKhmer = isKhmerText(words[i]?.text ?? "");
+      if (prevIsKhmer && currIsKhmer) {
+        result += parts[i];
+      } else {
+        result += ` ${parts[i]}`;
+      }
+    }
+    return result;
+  }
+
+  return parts.join(" ");
 }
 
 export function cuesToSrt(cues) {
@@ -252,7 +332,7 @@ export function cuesToAss(cues, options) {
   const karaoke = captionStyle === "karaoke";
   const khmer = usesKhmer(language, cues);
   const fontName = khmer ? "Noto Sans Khmer" : style.font;
-  const maxChars = khmer ? 26 : 44;
+  const maxChars = khmer ? 20 : 44;
   const textColor = normalizeColor(
     captionColors?.text,
     DEFAULT_CAPTION_COLORS.text
@@ -261,9 +341,13 @@ export function cuesToAss(cues, options) {
     captionColors?.highlight,
     DEFAULT_CAPTION_COLORS.highlight
   );
-  const fontSize = Math.max(18, Math.round(height * style.sizeRatio));
+  // Reduce font size for Khmer to prevent overcrowding and stacking issues
+  const sizeRatio = khmer ? style.sizeRatio * 0.75 : style.sizeRatio;
+  const fontSize = Math.max(18, Math.round(height * sizeRatio));
   const outline = Math.max(2, Math.round(height * style.outlineRatio));
   const marginV = Math.round(height * style.marginRatio);
+  // Khmer text benefits from extra letter spacing to avoid glyph collisions
+  const spacing = khmer ? 1 : 0;
 
   const header = [
     "[Script Info]",
@@ -275,7 +359,7 @@ export function cuesToAss(cues, options) {
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Default,${fontName},${fontSize},${assColor(textColor)},${assColor(highlightColor)},&H00000000,${style.backColour},${style.bold},0,0,0,100,100,0,0,${style.borderStyle},${outline},${style.shadow},2,48,48,${marginV},1`,
+    `Style: Default,${fontName},${fontSize},${assColor(textColor)},${assColor(highlightColor)},&H00000000,${style.backColour},${style.bold},0,0,0,100,100,${spacing},0,${style.borderStyle},${outline},${style.shadow},2,48,48,${marginV},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -289,6 +373,7 @@ export function cuesToAss(cues, options) {
           uppercase: style.uppercase,
           text: textColor,
           highlight: highlightColor,
+          khmer,
         });
         events.push(
           `Dialogue: 0,${assTime(timeline.start)},${assTime(timeline.end)},Default,,0,0,0,,${text}`
@@ -299,7 +384,8 @@ export function cuesToAss(cues, options) {
 
     const text = wrapText(
       escapeAss(style.uppercase ? cue.text.toUpperCase() : cue.text),
-      maxChars
+      maxChars,
+      khmer
     );
     events.push(
       `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Default,,0,0,0,,${text}`
