@@ -67,86 +67,65 @@ function isKhmerText(text) {
   return KHMER_SCRIPT.test(text);
 }
 
-/**
- * Join word tokens. Khmer script doesn't use spaces between words
- * the way Latin scripts do — join Khmer tokens without spaces.
- */
-function joinWords(texts, khmer) {
-  if (!khmer) return texts.join(" ");
-  // For Khmer: join without spaces when both sides are Khmer script,
-  // keep space when mixing with Latin/digits.
-  let result = "";
-  for (let i = 0; i < texts.length; i++) {
-    if (i === 0) {
-      result = texts[i];
-      continue;
-    }
-    const prevIsKhmer = isKhmerText(texts[i - 1]);
-    const currIsKhmer = isKhmerText(texts[i]);
-    // No space between consecutive Khmer tokens
-    if (prevIsKhmer && currIsKhmer) {
-      result += texts[i];
-    } else {
-      result += ` ${texts[i]}`;
+function joinWords(texts) {
+  return texts.filter(Boolean).join(" ");
+}
+
+function findSafeKhmerBreak(text, maxChars) {
+  // First attempt: space or punctuation break
+  for (let i = maxChars; i >= Math.floor(maxChars * 0.4); i--) {
+    if (/[\s\u17D4\u17D5\u17D6,.\u200B]/.test(text[i])) {
+      return i + 1;
     }
   }
-  return result;
+  // Second attempt: before a base consonant that is NOT preceded by coeng (\u17D2)
+  for (let i = maxChars; i >= Math.floor(maxChars * 0.4); i--) {
+    const char = text[i];
+    const prevChar = text[i - 1];
+    if (/[\u1780-\u17A2]/.test(char) && prevChar !== "\u17D2") {
+      return i;
+    }
+  }
+  return maxChars;
 }
 
 function wrapText(text, maxChars, khmer) {
   if (text.length <= maxChars) return text;
 
-  if (khmer) {
-    // For Khmer: break by character count at safe breakpoints
-    // Khmer break opportunities are after certain characters or before consonants
-    const KHMER_BREAK = /[\u17D4\u17D5\u17D6\s,.\u200B]/;
-    const lines = [];
-    let remaining = text;
-    while (remaining.length > maxChars) {
-      let breakAt = -1;
-      // Look backwards from maxChars for a break opportunity
-      for (let i = maxChars; i >= Math.floor(maxChars * 0.5); i--) {
-        if (KHMER_BREAK.test(remaining[i])) {
-          breakAt = i + 1;
-          break;
-        }
-      }
-      // No good break found, force break at maxChars
-      if (breakAt === -1) breakAt = maxChars;
-      lines.push(remaining.slice(0, breakAt).trim());
-      remaining = remaining.slice(breakAt).trim();
-    }
-    if (remaining) lines.push(remaining);
-    return lines.join("\\N");
-  }
-
+  const words = text.split(/\s+/).filter(Boolean);
   const lines = [];
-  let line = "";
-  for (const word of text.split(" ")) {
-    if (!word) continue;
-    if (!line) {
-      line = word;
-    } else if (line.length + 1 + word.length <= maxChars) {
-      line += ` ${word}`;
+  let currentLine = "";
+
+  for (const word of words) {
+    if (!currentLine) {
+      currentLine = word;
+    } else if (currentLine.length + 1 + word.length <= maxChars) {
+      currentLine += ` ${word}`;
     } else {
-      lines.push(line);
-      line = word;
+      lines.push(currentLine);
+      currentLine = word;
     }
   }
-  if (line) lines.push(line);
+  if (currentLine) lines.push(currentLine);
 
-  const wrapped = [];
-  for (const entry of lines) {
-    if (entry.length <= maxChars) {
-      wrapped.push(entry);
+  const finalLines = [];
+  for (const line of lines) {
+    if (line.length <= maxChars) {
+      finalLines.push(line);
       continue;
     }
-    for (let index = 0; index < entry.length; index += maxChars) {
-      wrapped.push(entry.slice(index, index + maxChars));
+    let remaining = line;
+    while (remaining.length > maxChars) {
+      const breakAt = khmer
+        ? findSafeKhmerBreak(remaining, maxChars)
+        : maxChars;
+      finalLines.push(remaining.slice(0, breakAt).trim());
+      remaining = remaining.slice(breakAt).trim();
     }
+    if (remaining) finalLines.push(remaining);
   }
 
-  return wrapped.join("\\N");
+  return finalLines.join("\\N");
 }
 
 export function buildCues(words, start, end, language) {
@@ -286,35 +265,15 @@ function karaokeTimeline(cue) {
 }
 
 function karaokeEventText(cue, activeIndex, options) {
-  const parts = (cue.words ?? []).map((word, wordIndex) => {
-    const color = assColor(
-      wordIndex === activeIndex ? options.highlight : options.text
-    );
-    const text = options.uppercase ? word.text.toUpperCase() : word.text;
-    return `{\\1c${color}}${escapeAss(text)}`;
-  });
-
-  // For Khmer karaoke, join without spaces between Khmer tokens
-  if (options.khmer) {
-    let result = "";
-    const words = cue.words ?? [];
-    for (let i = 0; i < parts.length; i++) {
-      if (i === 0) {
-        result = parts[i];
-        continue;
-      }
-      const prevIsKhmer = isKhmerText(words[i - 1]?.text ?? "");
-      const currIsKhmer = isKhmerText(words[i]?.text ?? "");
-      if (prevIsKhmer && currIsKhmer) {
-        result += parts[i];
-      } else {
-        result += ` ${parts[i]}`;
-      }
-    }
-    return result;
-  }
-
-  return parts.join(" ");
+  return (cue.words ?? [])
+    .map((word, wordIndex) => {
+      const color = assColor(
+        wordIndex === activeIndex ? options.highlight : options.text
+      );
+      const text = options.uppercase ? word.text.toUpperCase() : word.text;
+      return `{\\1c${color}}${escapeAss(text)}`;
+    })
+    .join(" ");
 }
 
 export function cuesToSrt(cues) {
@@ -331,8 +290,8 @@ export function cuesToAss(cues, options) {
   const style = styleFor(captionStyle);
   const karaoke = captionStyle === "karaoke";
   const khmer = usesKhmer(language, cues);
-  const fontName = khmer ? "Noto Sans Khmer" : style.font;
-  const maxChars = khmer ? 20 : 44;
+  const fontName = khmer ? "Kantumruy Pro, Kantumruy" : style.font;
+  const maxChars = khmer ? 24 : 44;
   const textColor = normalizeColor(
     captionColors?.text,
     DEFAULT_CAPTION_COLORS.text
@@ -341,13 +300,12 @@ export function cuesToAss(cues, options) {
     captionColors?.highlight,
     DEFAULT_CAPTION_COLORS.highlight
   );
-  // Reduce font size for Khmer to prevent overcrowding and stacking issues
-  const sizeRatio = khmer ? style.sizeRatio * 0.75 : style.sizeRatio;
+  // Optimal font sizing for Kantumruy Pro in vertical video
+  const sizeRatio = khmer ? style.sizeRatio * 0.85 : style.sizeRatio;
   const fontSize = Math.max(18, Math.round(height * sizeRatio));
   const outline = Math.max(2, Math.round(height * style.outlineRatio));
   const marginV = Math.round(height * style.marginRatio);
-  // Khmer text benefits from extra letter spacing to avoid glyph collisions
-  const spacing = khmer ? 1 : 0;
+  const spacing = 0;
 
   const header = [
     "[Script Info]",

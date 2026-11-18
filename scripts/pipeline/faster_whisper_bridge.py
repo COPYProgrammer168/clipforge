@@ -31,15 +31,27 @@ def main():
     language = None if args.language in (None, "", "auto") else args.language
     audio = load_wav(args.audio)
     model = WhisperModel(args.model, device="cpu", compute_type="int8")
-    segments, info = model.transcribe(
-        audio,
-        language=language,
-        beam_size=args.beam_size,
-        word_timestamps=True,
-        vad_filter=True,
-        condition_on_previous_text=False,
-        temperature=0.0,
-    )
+
+    beam_size = max(args.beam_size, 5) if args.beam_size <= 1 else args.beam_size
+    transcribe_options = {
+        "language": language,
+        "beam_size": beam_size,
+        "best_of": beam_size,
+        "word_timestamps": True,
+        "vad_filter": True,
+        "vad_parameters": {"min_silence_duration_ms": 400, "speech_pad_ms": 200},
+        "condition_on_previous_text": False,
+        "temperature": 0.0,
+        "compression_ratio_threshold": 2.2,
+        "repetition_penalty": 1.2,
+        "no_repeat_ngram_size": 3,
+        "hallucination_silence_threshold": 2.0,
+    }
+
+    if language == "km":
+        transcribe_options["initial_prompt"] = "សួស្តី នេះជាវីដេអូជាភាសាខ្មែរ"
+
+    segments, info = model.transcribe(audio, **transcribe_options)
 
     print(f"LANGUAGE {info.language}", flush=True)
 

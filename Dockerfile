@@ -10,6 +10,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         ffmpeg \
+        fontconfig \
         libgomp1 \
         fonts-liberation \
         fonts-noto-core \
@@ -23,6 +24,9 @@ RUN python3 -m venv /opt/venv \
     && pip install faster-whisper==1.2.1 yt-dlp==2026.08.19
 
 WORKDIR /app
+
+COPY fonts/ /usr/local/share/fonts/kantumruy/
+RUN fc-cache -fv
 
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund

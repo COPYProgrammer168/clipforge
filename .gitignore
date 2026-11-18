@@ -53,7 +53,8 @@ next-env.d.ts
 
 # Worker scratch space and rendered media
 .work/
-.models/
+.models/*
+!.models/faster-whisper-base-khmer/
 public/clips/
 
 # Local temp files

@@ -39,8 +39,24 @@ async function hasFasterWhisper() {
   return fasterWhisperAvailable;
 }
 
+function cleanWord(rawText) {
+  let text = String(rawText ?? "").trim();
+  if (!text) return "";
+  // Collapse invalid duplicate Khmer combining vowels/diacritics (\u17B6 to \u17D3)
+  // e.g. \u17B8\u17B8\u17B8 -> \u17B8
+  text = text.replace(/([\u17B6-\u17D3])\1+/gu, "$1");
+  // Remove replacement characters
+  text = text.replace(/\uFFFD/g, "").trim();
+  return text;
+}
+
 function isNoiseWord(text) {
-  return text.includes("\uFFFD") || /(.)\1{7,}/.test(text);
+  if (!text || text.includes("\uFFFD")) return true;
+  // 5+ identical consecutive characters is noise/hallucination
+  if (/(.)\1{4,}/u.test(text)) return true;
+  // Isolated Khmer combining signs without any base consonant is noise
+  if (/^[\u17B6-\u17D3\u17D2]+$/u.test(text)) return true;
+  return false;
 }
 
 function parseTranscript(payload) {
@@ -49,8 +65,16 @@ function parseTranscript(payload) {
   for (const segment of payload.segments ?? []) {
     if (Array.isArray(segment.words) && segment.words.length > 0) {
       for (const word of segment.words) {
-        const text = String(word.word ?? "").trim();
+        const text = cleanWord(word.word);
         if (!text || isNoiseWord(text)) continue;
+
+        // Skip 3+ repetitions of the exact same word in a row
+        const last = words[words.length - 1];
+        const prev = words[words.length - 2];
+        if (last && prev && last.text === text && prev.text === text) {
+          continue;
+        }
+
         const start = Number(word.start);
         const end = Number(word.end);
         words.push({
@@ -65,6 +89,7 @@ function parseTranscript(payload) {
     const tokens = String(segment.text ?? "")
       .trim()
       .split(/\s+/)
+      .map(cleanWord)
       .filter((token) => token && !isNoiseWord(token));
     if (tokens.length === 0) continue;
 
@@ -72,6 +97,11 @@ function parseTranscript(payload) {
     const end = Number(segment.end) || start;
     const step = tokens.length > 0 ? (end - start) / tokens.length : 0;
     tokens.forEach((token, index) => {
+      const last = words[words.length - 1];
+      const prev = words[words.length - 2];
+      if (last && prev && last.text === token && prev.text === token) {
+        return;
+      }
       words.push({
         text: token,
         start: start + index * step,
@@ -209,9 +239,7 @@ export async function transcribe(audioPath, outDir, options = {}) {
       const shouldRetryKhmer =
         khmerAvailable &&
         fastSettings.model !== khmerModel &&
-        (settings.language === "km" || result.language === "km") &&
-        result.words.length > 0 &&
-        !usesKhmerScript(result.words);
+        (settings.language === "km" || result.language === "km" || usesKhmerScript(result.words));
 
       if (shouldRetryKhmer) {
         try {
