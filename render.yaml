@@ -1,31 +1,35 @@
+# Render Free: web-only service. Turso/libSQL holds the queue; Vercel Blob
+# holds uploads and clips because Free instances cannot attach a disk.
 services:
   - type: web
     name: clipforge
     runtime: docker
-    plan: standard
+    plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /
     autoDeploy: true
-    disk:
-      name: clipforge-data
-      mountPath: /var/data
-      sizeGB: 10
     envVars:
       - key: DATABASE_URL
-        value: file:/var/data/clipforge.db
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false
+      - key: BLOB_READ_WRITE_TOKEN
+        sync: false
+      - key: CLIP_STORAGE
+        value: blob
+      - key: WORKER_DISABLED
+        value: "1"
       - key: HF_HOME
-        value: /var/data/hf-cache
+        value: /tmp/hf-cache
       - key: WHISPER_MODEL
         value: base
-      - key: WHISPER_MODEL_KM
-        value: /var/data/models/faster-whisper-base-khmer
       - key: POLL_SECONDS
         value: "3"
       - key: WORK_ROOT
-        value: /var/data/work
+        value: /tmp/work
       - key: CLIPS_ROOT
-        value: /var/data/clips
+        value: /tmp/clips
       - key: MIN_CLIP_SECONDS
         value: "16"
       - key: MAX_CLIP_SECONDS

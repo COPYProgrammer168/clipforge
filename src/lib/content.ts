@@ -93,12 +93,12 @@ export const productPages: Record<string, ProductPage> = {
     eyebrow: "Aspect ratios",
     title: "One recording. Three frame sizes.",
     description:
-      "Choose 9:16, 1:1 or 16:9 when you create a job. The worker center-crops the source and renders at 1080p. There is no face tracking or keyframe pass.",
+      "Choose 9:16, 1:1 or 16:9 when you create a job. Fill the frame with a center crop or keep the whole shot over a blurred background, then render at 1080p. There is no face tracking or keyframe pass.",
     highlights: [
       {
-        title: "Center crop, fixed",
+        title: "Crop or blurred fill",
         description:
-          "Framing uses the center of the source frame. It does not follow a face, so check the crop before using footage where the subject sits off-center.",
+          "Crop fills the frame from the center. Blur scales the whole source to fit and fills the sides with a blurred copy, or randomize the choice per clip.",
       },
       {
         title: "One ratio per job",
@@ -118,7 +118,7 @@ export const productPages: Record<string, ProductPage> = {
       },
       {
         title: "Render at 1080p",
-        description: "The worker crops the source to the selected frame and burns in the caption track.",
+        description: "The worker crops or blurs the background, then burns in the caption track.",
       },
       {
         title: "Download the set",
@@ -136,22 +136,22 @@ export const productPages: Record<string, ProductPage> = {
     eyebrow: "Captions",
     title: "Burned in, with the SRT to match.",
     description:
-      "Whisper supplies word-level timing. ClipForge turns it into three caption presets, highlights numbers and hook words, and exports both a captioned MP4 and a clean SRT.",
+      "Whisper supplies word-level timing. ClipForge turns it into four caption presets, including vertical karaoke with per-word highlighting and custom colors, and exports both a captioned MP4 and a clean SRT.",
     highlights: [
       {
-        title: "Three presets",
+        title: "Four presets",
         description:
-          "Bold, Clean and Boxed are rendered with ffmpeg and ASS. Pick one per job; the worker applies it to every clip.",
+          "Bold, Clean, Boxed and Karaoke are rendered with ffmpeg and ASS. Pick one per job; the worker applies it to every clip.",
       },
       {
-        title: "Word-level timing",
+        title: "Karaoke timing",
         description:
-          "Captions follow the transcript's word timestamps and break at punctuation or pauses instead of flashing every word individually.",
+          "Karaoke keeps the line on screen and colors each word as it is spoken, using the transcript's word timestamps.",
       },
       {
-        title: "Selective emphasis",
+        title: "Custom colors",
         description:
-          "Numbers and a fixed hook-word list are highlighted in the accent color. There is no manual emphasis editor yet.",
+          "Choose the caption text color and the active-word highlight color for every job. Captions appear only when speech is detected.",
       },
     ],
     steps: [
@@ -161,7 +161,7 @@ export const productPages: Record<string, ProductPage> = {
       },
       {
         title: "Choose a style",
-        description: "Select Bold, Clean or Boxed in the job options before processing starts.",
+        description: "Select Bold, Clean, Boxed or Karaoke and pick the caption colors.",
       },
       {
         title: "Take both files",
@@ -169,8 +169,8 @@ export const productPages: Record<string, ProductPage> = {
       },
     ],
     stats: [
-      { value: "3", label: "caption presets" },
-      { value: "Word", label: "level timing" },
+      { value: "4", label: "caption presets" },
+      { value: "Karaoke", label: "word highlight" },
       { value: "MP4+SRT", label: "every export" },
     ],
   },

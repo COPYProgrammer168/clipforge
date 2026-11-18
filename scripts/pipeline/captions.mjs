@@ -32,7 +32,25 @@ const STYLE_PRESETS = {
     backColour: "&H80000000",
     uppercase: false,
   },
+  karaoke: {
+    font: "Arial",
+    sizeRatio: 0.056,
+    bold: -1,
+    outlineRatio: 0.0035,
+    shadow: 0,
+    borderStyle: 1,
+    marginRatio: 0.22,
+    backColour: "&H00000000",
+    uppercase: true,
+  },
 };
+
+const DEFAULT_CAPTION_COLORS = {
+  text: "#ffffff",
+  highlight: "#c7ff3e",
+};
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 const KHMER_SCRIPT = /[\u1780-\u17FF]/;
 
@@ -88,11 +106,22 @@ export function buildCues(words, start, end) {
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
-    if (text) {
+    const cueStart = clamp(group[0].start - start, 0, end - start);
+    const cueEnd = clamp(
+      group[group.length - 1].end - start,
+      0,
+      end - start
+    );
+    if (text && cueEnd > cueStart) {
       cues.push({
-        start: clamp(group[0].start - start, 0, end - start),
-        end: clamp(group[group.length - 1].end - start, 0, end - start),
+        start: cueStart,
+        end: cueEnd,
         text,
+        words: group.map((word) => ({
+          text: word.text,
+          start: clamp(word.start - start, cueStart, cueEnd),
+          end: clamp(word.end - start, cueStart, cueEnd),
+        })),
       });
     }
     group = [];
@@ -158,6 +187,56 @@ function styleFor(name) {
   return STYLE_PRESETS[name] ?? STYLE_PRESETS.bold;
 }
 
+function normalizeColor(value, fallback) {
+  return typeof value === "string" && HEX_COLOR.test(value.trim())
+    ? value.trim()
+    : fallback;
+}
+
+function assColor(hex) {
+  const value = hex.slice(1).toUpperCase();
+  return `&H00${value.slice(4, 6)}${value.slice(2, 4)}${value.slice(0, 2)}`;
+}
+
+function karaokeTimeline(cue) {
+  const words = cue.words ?? [];
+  if (words.length === 0) {
+    return [{ start: cue.start, end: cue.end, index: 0 }];
+  }
+
+  const starts = words.map((word) =>
+    clamp(word.start, cue.start, cue.end)
+  );
+  for (let index = 1; index < starts.length; index += 1) {
+    starts[index] = Math.max(starts[index], starts[index - 1] + 0.01);
+  }
+
+  const events = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const start = index === 0 ? cue.start : starts[index];
+    const end = index + 1 < words.length ? starts[index + 1] : cue.end;
+    if (end > start + 0.02) {
+      events.push({ start, end, index });
+    }
+  }
+
+  return events.length > 0
+    ? events
+    : [{ start: cue.start, end: cue.end, index: 0 }];
+}
+
+function karaokeEventText(cue, activeIndex, options) {
+  return (cue.words ?? [])
+    .map((word, wordIndex) => {
+      const color = assColor(
+        wordIndex === activeIndex ? options.highlight : options.text
+      );
+      const text = options.uppercase ? word.text.toUpperCase() : word.text;
+      return `{\\1c${color}}${escapeAss(text)}`;
+    })
+    .join(" ");
+}
+
 export function cuesToSrt(cues) {
   return `${cues
     .map(
@@ -168,11 +247,20 @@ export function cuesToSrt(cues) {
 }
 
 export function cuesToAss(cues, options) {
-  const { width, height, captionStyle, language } = options;
+  const { width, height, captionStyle, language, captionColors } = options;
   const style = styleFor(captionStyle);
+  const karaoke = captionStyle === "karaoke";
   const khmer = usesKhmer(language, cues);
   const fontName = khmer ? "Noto Sans Khmer" : style.font;
   const maxChars = khmer ? 26 : 44;
+  const textColor = normalizeColor(
+    captionColors?.text,
+    DEFAULT_CAPTION_COLORS.text
+  );
+  const highlightColor = normalizeColor(
+    captionColors?.highlight,
+    DEFAULT_CAPTION_COLORS.highlight
+  );
   const fontSize = Math.max(18, Math.round(height * style.sizeRatio));
   const outline = Math.max(2, Math.round(height * style.outlineRatio));
   const marginV = Math.round(height * style.marginRatio);
@@ -182,24 +270,41 @@ export function cuesToAss(cues, options) {
     "ScriptType: v4.00+",
     `PlayResX: ${width}`,
     `PlayResY: ${height}`,
-    "WrapStyle: 2",
+    "WrapStyle: 0",
     "ScaledBorderAndShadow: yes",
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Default,${fontName},${fontSize},&H00FFFFFF,&H000000FF,&H00000000,${style.backColour},${style.bold},0,0,0,100,100,0,0,${style.borderStyle},${outline},${style.shadow},2,48,48,${marginV},1`,
+    `Style: Default,${fontName},${fontSize},${assColor(textColor)},${assColor(highlightColor)},&H00000000,${style.backColour},${style.bold},0,0,0,100,100,0,0,${style.borderStyle},${outline},${style.shadow},2,48,48,${marginV},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
   ];
 
-  const events = cues.map((cue) => {
+  const events = [];
+  for (const cue of cues) {
+    if (karaoke && cue.words?.length) {
+      for (const timeline of karaokeTimeline(cue)) {
+        const text = karaokeEventText(cue, timeline.index, {
+          uppercase: style.uppercase,
+          text: textColor,
+          highlight: highlightColor,
+        });
+        events.push(
+          `Dialogue: 0,${assTime(timeline.start)},${assTime(timeline.end)},Default,,0,0,0,,${text}`
+        );
+      }
+      continue;
+    }
+
     const text = wrapText(
       escapeAss(style.uppercase ? cue.text.toUpperCase() : cue.text),
       maxChars
     );
-    return `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Default,,0,0,0,,${text}`;
-  });
+    events.push(
+      `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Default,,0,0,0,,${text}`
+    );
+  }
 
   return `${header.concat(events).join("\n")}\n`;
 }

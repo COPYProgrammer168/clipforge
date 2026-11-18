@@ -25,9 +25,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  BACKGROUND_MODES,
+  CAPTION_STYLES,
+  DEFAULT_CAPTION_COLORS,
   LANGUAGES,
   MAX_UPLOAD_BYTES,
   type AspectRatio,
+  type BackgroundMode,
+  type CaptionColors,
   type CaptionStyle,
 } from "@/lib/plans";
 import { cn } from "@/lib/utils";
@@ -80,6 +85,32 @@ function ChoiceChip({
   );
 }
 
+function CaptionColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 transition-colors hover:border-white/20">
+      <input
+        type="color"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="size-6 cursor-pointer rounded border-0 bg-transparent p-0"
+        aria-label={`${label} color`}
+      />
+      <span className="text-[11px] text-white/55">{label}</span>
+      <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-white/30">
+        {value}
+      </span>
+    </label>
+  );
+}
+
 export function NewClipDialog({
   open,
   onOpenChange,
@@ -100,7 +131,11 @@ export function NewClipDialog({
   const [dragging, setDragging] = useState(false);
   const [clipCount, setClipCount] = useState(10);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [background, setBackground] = useState<BackgroundMode>("crop");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("bold");
+  const [captionColors, setCaptionColors] = useState<CaptionColors>(
+    DEFAULT_CAPTION_COLORS
+  );
   const [language, setLanguage] = useState("auto");
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "uploading" | "creating">("idle");
@@ -134,7 +169,9 @@ export function NewClipDialog({
       const options = {
         clipCount,
         aspectRatio,
+        background,
         captionStyle,
+        captionColors,
         language,
       };
 
@@ -402,12 +439,34 @@ export function NewClipDialog({
                 </div>
               </div>
 
+              <div className="space-y-2 sm:col-span-2">
+                <Label className="text-[11px] text-white/45">Background</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {BACKGROUND_MODES.map((mode) => (
+                    <ChoiceChip
+                      key={mode}
+                      active={background === mode}
+                      onClick={() => setBackground(mode)}
+                    >
+                      {mode[0].toUpperCase() + mode.slice(1)}
+                    </ChoiceChip>
+                  ))}
+                </div>
+                <p className="text-[10px] leading-relaxed text-white/30">
+                  {background === "random"
+                    ? "Random mixes center crop and blurred fill across the clips."
+                    : background === "blur"
+                      ? "Fits the whole frame over a blurred fill of the same video."
+                      : "Fills the frame with a center crop."}
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-[11px] text-white/45">
                   Caption style
                 </Label>
-                <div className="flex gap-1.5">
-                  {(["bold", "clean", "boxed"] as const).map((style) => (
+                <div className="flex flex-wrap gap-1.5">
+                  {CAPTION_STYLES.map((style) => (
                     <ChoiceChip
                       key={style}
                       active={captionStyle === style}
@@ -442,6 +501,33 @@ export function NewClipDialog({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label className="text-[11px] text-white/45">
+                  Caption colors
+                </Label>
+                <div className="flex flex-wrap gap-2">
+                  <CaptionColorField
+                    label="Text"
+                    value={captionColors.text}
+                    onChange={(text) =>
+                      setCaptionColors((current) => ({ ...current, text }))
+                    }
+                  />
+                  <CaptionColorField
+                    label="Active word"
+                    value={captionColors.highlight}
+                    onChange={(highlight) =>
+                      setCaptionColors((current) => ({ ...current, highlight }))
+                    }
+                  />
+                </div>
+                <p className="text-[10px] leading-relaxed text-white/30">
+                  {captionStyle === "karaoke"
+                    ? "Karaoke highlights each spoken word in the active-word color."
+                    : "The active-word color is used by the Karaoke caption style."}
+                </p>
               </div>
             </div>
           </div>

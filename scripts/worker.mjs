@@ -179,6 +179,18 @@ function genericTitle(title) {
   );
 }
 
+function resolveBackground(mode, jobId, clipNumber) {
+  const value = mode ?? "crop";
+  if (value !== "random") return value;
+
+  let hash = 2166136261;
+  for (const character of `${jobId}:${clipNumber}`) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 2 === 0 ? "blur" : "crop";
+}
+
 async function processJob(jobId) {
   const job = await loadJob(jobId);
   const options = JSON.parse(String(job.options));
@@ -286,7 +298,9 @@ async function processJob(jobId) {
         durationSeconds: item.end - item.start,
         width,
         height,
+        background: resolveBackground(options.background, jobId, index + 1),
         captionStyle: options.captionStyle,
+        captionColors: options.captionColors,
         language:
           options.language && options.language !== "auto"
             ? options.language

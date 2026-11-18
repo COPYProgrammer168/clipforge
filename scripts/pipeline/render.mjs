@@ -18,7 +18,9 @@ export async function renderClip(options) {
     durationSeconds,
     width,
     height,
+    background,
     captionStyle,
+    captionColors,
     language,
     words,
     captionTextFallback,
@@ -35,57 +37,82 @@ export async function renderClip(options) {
   await writeFile(path.join(outDir, srtName), cuesToSrt(cues), "utf8");
   await writeFile(
     path.join(outDir, assName),
-    cuesToAss(cues, { width, height, captionStyle, language }),
+    cuesToAss(cues, {
+      width,
+      height,
+      captionStyle,
+      captionColors,
+      language,
+    }),
     "utf8"
   );
 
-  const filters = [
-    `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos`,
-    `crop=${width}:${height}`,
-    "setsar=1",
+  const args = [
+    "-y",
+    "-v",
+    "error",
+    "-ss",
+    String(startSeconds),
+    "-t",
+    String(duration),
+    "-i",
+    sourcePath,
   ];
-  if (cues.length > 0) {
-    filters.push(`ass=${assName}`);
+
+  if (background === "blur") {
+    const sigma = Math.max(16, Math.round(Math.min(width, height) / 20));
+    const graph = [
+      "[0:v]split=2[background][foreground]",
+      `[background]scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${height},gblur=sigma=${sigma}[blurred]`,
+      `[foreground]scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,setsar=1[front]`,
+      "[blurred][front]overlay=(W-w)/2:(H-h)/2,setsar=1[composed]",
+    ];
+    if (cues.length > 0) {
+      graph.push(`[composed]ass=${assName}[vout]`);
+    } else {
+      graph.push("[composed]null[vout]");
+    }
+    args.push(
+      "-filter_complex",
+      graph.join(";"),
+      "-map",
+      "[vout]"
+    );
+  } else {
+    const filters = [
+      `scale=${width}:${height}:force_original_aspect_ratio=increase:flags=lanczos`,
+      `crop=${width}:${height}`,
+      "setsar=1",
+    ];
+    if (cues.length > 0) {
+      filters.push(`ass=${assName}`);
+    }
+    args.push("-vf", filters.join(","), "-map", "0:v:0");
   }
 
-  await runProcess(
-    "ffmpeg",
-    [
-      "-y",
-      "-v",
-      "error",
-      "-ss",
-      String(startSeconds),
-      "-t",
-      String(duration),
-      "-i",
-      sourcePath,
-      "-vf",
-      filters.join(","),
-      "-map",
-      "0:v:0",
-      "-map",
-      "0:a:0?",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "21",
-      "-pix_fmt",
-      "yuv420p",
-      "-r",
-      "30",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "160k",
-      "-movflags",
-      "+faststart",
-      videoName,
-    ],
-    { cwd: outDir }
+  args.push(
+    "-map",
+    "0:a:0?",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "21",
+    "-pix_fmt",
+    "yuv420p",
+    "-r",
+    "30",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "160k",
+    "-movflags",
+    "+faststart",
+    videoName
   );
+
+  await runProcess("ffmpeg", args, { cwd: outDir });
 
   await runProcess(
     "ffmpeg",

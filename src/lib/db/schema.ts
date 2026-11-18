@@ -5,7 +5,12 @@ import {
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
-import type { AspectRatio, CaptionStyle } from "@/lib/plans";
+import type {
+  AspectRatio,
+  BackgroundMode,
+  CaptionColors,
+  CaptionStyle,
+} from "@/lib/plans";
 
 export type JobStatus =
   | "queued"
@@ -17,7 +22,9 @@ export type JobStatus =
 export type JobOptions = {
   clipCount: number;
   aspectRatio: AspectRatio;
+  background?: BackgroundMode;
   captionStyle: CaptionStyle;
+  captionColors?: CaptionColors;
   language: string;
 };
 

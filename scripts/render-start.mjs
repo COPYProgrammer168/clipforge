@@ -1,10 +1,76 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import path from "node:path";
+
+try {
+  process.loadEnvFile(".env.local");
+} catch {
+  // No .env.local present.
+}
+try {
+  process.loadEnvFile(".env");
+} catch {
+  // No .env present.
+}
 
 const port = process.env.PORT ?? "3000";
+const workerDisabled = ["1", "true", "yes"].includes(
+  (process.env.WORKER_DISABLED ?? "").trim().toLowerCase()
+);
+const autoSetup = !["0", "false", "no"].includes(
+  (process.env.DB_AUTO_SETUP ?? "1").trim().toLowerCase()
+);
 let shuttingDown = false;
 let web = null;
 let worker = null;
 let restartTimer = null;
+
+if (process.env.RENDER && !process.env.DATABASE_URL) {
+  console.error(
+    "[render] DATABASE_URL is not set. Configure a Turso/libSQL URL instead of using ephemeral SQLite."
+  );
+  process.exit(1);
+}
+
+if (
+  process.env.RENDER &&
+  process.env.DATABASE_URL?.startsWith("libsql://") &&
+  !process.env.DATABASE_AUTH_TOKEN
+) {
+  console.error(
+    "[render] DATABASE_AUTH_TOKEN is required for a libsql:// database."
+  );
+  process.exit(1);
+}
+
+if (
+  process.env.RENDER &&
+  (process.env.CLIP_STORAGE ?? "").trim().toLowerCase() === "blob" &&
+  !process.env.BLOB_READ_WRITE_TOKEN
+) {
+  console.warn(
+    "[render] CLIP_STORAGE=blob but BLOB_READ_WRITE_TOKEN is not set; uploads and clip publishing will fail."
+  );
+}
+
+if (autoSetup) {
+  console.log("[render] applying database migrations");
+  const result = spawnSync(
+    process.execPath,
+    [path.join(process.cwd(), "scripts", "migrate.mjs")],
+    { stdio: "inherit", env: process.env }
+  );
+  if (result.error) {
+    console.error(`[render] database migration failed: ${result.error.message}`);
+    process.exit(1);
+  }
+  if (result.status !== 0) {
+    console.error(
+      `[render] database migration failed (${result.status ?? result.signal})`
+    );
+    process.exit(result.status ?? 1);
+  }
+  console.log("[render] database schema ready");
+}
 
 function shutdown(code = 0) {
   if (shuttingDown) return;
@@ -46,5 +112,9 @@ web.on("exit", (code) => {
   }
 });
 
-console.log(`[render] web on :${port}, worker starting`);
-startWorker();
+if (workerDisabled) {
+  console.log(`[render] web on :${port}, worker disabled`);
+} else {
+  console.log(`[render] web on :${port}, worker starting`);
+  startWorker();
+}

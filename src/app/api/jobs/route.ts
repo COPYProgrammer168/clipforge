@@ -7,12 +7,25 @@ import { getUsage, serializeJob } from "@/lib/jobs";
 import { getWorkspaceUserId } from "@/lib/workspace";
 import {
   ASPECT_RATIOS,
+  BACKGROUND_MODES,
   CAPTION_STYLES,
+  DEFAULT_CAPTION_COLORS,
   MAX_SOURCE_SECONDS,
 } from "@/lib/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const hexColor = z
+  .string()
+  .regex(/^#[0-9a-f]{6}$/i, "Use a hex color like #c7ff3e.");
+
+const captionColorsSchema = z
+  .object({
+    text: hexColor.default(DEFAULT_CAPTION_COLORS.text),
+    highlight: hexColor.default(DEFAULT_CAPTION_COLORS.highlight),
+  })
+  .default(DEFAULT_CAPTION_COLORS);
 
 const jobSchema = z
   .object({
@@ -25,13 +38,17 @@ const jobSchema = z
       .object({
         clipCount: z.number().int().min(1).max(10).default(10),
         aspectRatio: z.enum(ASPECT_RATIOS).default("9:16"),
+        background: z.enum(BACKGROUND_MODES).default("crop"),
         captionStyle: z.enum(CAPTION_STYLES).default("bold"),
+        captionColors: captionColorsSchema,
         language: z.string().min(2).max(12).default("auto"),
       })
       .default({
         clipCount: 10,
         aspectRatio: "9:16",
+        background: "crop",
         captionStyle: "bold",
+        captionColors: DEFAULT_CAPTION_COLORS,
         language: "auto",
       }),
   })
@@ -181,7 +198,9 @@ export async function POST(request: Request) {
         options: {
           clipCount: parsed.options.clipCount,
           aspectRatio: parsed.options.aspectRatio,
+          background: parsed.options.background,
           captionStyle: parsed.options.captionStyle,
+          captionColors: parsed.options.captionColors,
           language: parsed.options.language,
         },
       })

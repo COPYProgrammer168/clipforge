@@ -432,9 +432,29 @@ export function JobDetail({ jobId }: { jobId: string }) {
                 <Clock3 className="size-3" />
                 {formatDate(job.createdAt)}
               </span>
-              <span>
+              <span className="inline-flex items-center gap-1.5">
                 {job.options.clipCount} clips · {job.options.aspectRatio} ·{" "}
+                {job.options.background ?? "crop"} background ·{" "}
                 {job.options.captionStyle} captions
+                {job.options.captionColors ? (
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title="Caption text and active-word colors"
+                  >
+                    <span
+                      className="size-2 rounded-full ring-1 ring-white/25"
+                      style={{
+                        backgroundColor: job.options.captionColors.text,
+                      }}
+                    />
+                    <span
+                      className="size-2 rounded-full ring-1 ring-white/25"
+                      style={{
+                        backgroundColor: job.options.captionColors.highlight,
+                      }}
+                    />
+                  </span>
+                ) : null}
               </span>
               <span>{languageLabel}</span>
               {job.sourceType === "url" && source.sourceUrl ? (

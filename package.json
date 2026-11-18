@@ -26,6 +26,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:push": "drizzle-kit push",
+    "db:migrate": "node scripts/migrate.mjs",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "model:khmer": "python -c \"from ctranslate2.converters.transformers import main; main()\" --model sengtha/whisper-base-khmer --output_dir .models/faster-whisper-base-khmer --quantization int8 --force",

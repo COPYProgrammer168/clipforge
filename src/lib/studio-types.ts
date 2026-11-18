@@ -1,4 +1,9 @@
-import type { AspectRatio, CaptionStyle } from "@/lib/plans";
+import type {
+  AspectRatio,
+  BackgroundMode,
+  CaptionColors,
+  CaptionStyle,
+} from "@/lib/plans";
 
 export type JobStatus =
   | "queued"
@@ -14,7 +19,9 @@ export type StudioUsage = {
 export type StudioOptions = {
   clipCount: number;
   aspectRatio: AspectRatio;
+  background?: BackgroundMode;
   captionStyle: CaptionStyle;
+  captionColors?: CaptionColors;
   language: string;
 };
 
