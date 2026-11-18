@@ -1,7 +1,6 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { del, list } from "@vercel/blob";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { jobs, videos } from "@/lib/db/schema";
@@ -11,6 +10,7 @@ import {
   serializeClip,
   serializeJob,
 } from "@/lib/jobs";
+import { deleteJobClipObjects, deleteStoredUrls } from "@/lib/storage";
 import { getWorkspaceUserId } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -70,23 +70,16 @@ export async function DELETE(
     urls.push(owned.video.blobUrl);
   }
 
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      if (urls.length > 0) {
-        await del(urls);
-      }
-    } catch {
-      // Blob cleanup is best effort; the database rows still get removed.
-    }
+  try {
+    await deleteStoredUrls(urls);
+  } catch {
+    // Remote cleanup is best effort; the database rows still get removed.
+  }
 
-    try {
-      const { blobs } = await list({ prefix: `clips/${id}/` });
-      if (blobs.length > 0) {
-        await del(blobs.map((blob) => blob.url));
-      }
-    } catch {
-      // Prefix cleanup catches uploads left by failed attempts.
-    }
+  try {
+    await deleteJobClipObjects(id);
+  } catch {
+    // Prefix cleanup catches uploads left by failed attempts.
   }
 
   if (/^[0-9a-f-]{36}$/i.test(id)) {

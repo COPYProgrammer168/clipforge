@@ -14,6 +14,7 @@ import { planClips, transcriptUsable } from "./pipeline/score.mjs";
 import { aspectSize, renderClip } from "./pipeline/render.mjs";
 import {
   deleteJobBlobs,
+  deleteStoredUrl,
   publishClipArtifacts,
   usesBlobStorage,
 } from "./pipeline/storage.mjs";
@@ -348,6 +349,17 @@ async function processJob(jobId) {
       sql: "INSERT INTO usage_event (id, userId, jobId, secondsProcessed) VALUES (?, ?, ?, ?)",
       args: [randomUUID(), job.userId, jobId, Math.round(duration)],
     });
+
+    if (job.sourceType === "upload" && job.blobUrl) {
+      await deleteStoredUrl(String(job.blobUrl))
+        .then(() =>
+          db.execute({
+            sql: "UPDATE video SET blobUrl = NULL WHERE id = ?",
+            args: [job.videoId],
+          })
+        )
+        .catch(() => {});
+    }
 
     await db.execute({
       sql: `UPDATE job

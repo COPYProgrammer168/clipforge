@@ -42,13 +42,28 @@ if (
   process.exit(1);
 }
 
-if (
-  process.env.RENDER &&
-  (process.env.CLIP_STORAGE ?? "").trim().toLowerCase() === "blob" &&
+const storage = (process.env.CLIP_STORAGE ?? "local").trim().toLowerCase();
+
+if (storage === "r2") {
+  const required = [
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_BUCKET",
+    "R2_PUBLIC_BASE_URL",
+  ];
+  const missing = required.filter((name) => !process.env[name]);
+  if (missing.length > 0) {
+    console.warn(
+      `[render] CLIP_STORAGE=r2 is missing ${missing.join(", ")}; uploads and clip publishing will fail until they are set.`
+    );
+  }
+} else if (
+  (storage === "blob" || storage === "vercel") &&
   !process.env.BLOB_READ_WRITE_TOKEN
 ) {
   console.warn(
-    "[render] CLIP_STORAGE=blob but BLOB_READ_WRITE_TOKEN is not set; uploads and clip publishing will fail."
+    "[render] CLIP_STORAGE=blob but BLOB_READ_WRITE_TOKEN is not set; uploads and clip publishing will fail until it is set."
   );
 }
 

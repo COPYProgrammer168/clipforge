@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { clips, jobs, videos } from "@/lib/db/schema";
 import { getUsage, serializeJob } from "@/lib/jobs";
+import { isManagedUploadUrl } from "@/lib/storage";
 import { getWorkspaceUserId } from "@/lib/workspace";
 import {
   ASPECT_RATIOS,
@@ -95,19 +96,6 @@ function isSafeHttpUrl(value: string) {
   }
 }
 
-function isVercelBlobUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return (
-      url.hostname === "blob.vercel-storage.com" ||
-      url.hostname.endsWith(".blob.vercel-storage.com") ||
-      url.hostname.endsWith(".public.blob.vercel-storage.com")
-    );
-  } catch {
-    return false;
-  }
-}
-
 export async function GET() {
   const userId = await getWorkspaceUserId();
 
@@ -163,7 +151,7 @@ export async function POST(request: Request) {
   }
 
   if (parsed.sourceType === "upload") {
-    if (!parsed.blobUrl || !isVercelBlobUrl(parsed.blobUrl)) {
+    if (!parsed.blobUrl || !isManagedUploadUrl(parsed.blobUrl, userId)) {
       return NextResponse.json(
         { error: "The uploaded file could not be verified." },
         { status: 400 }

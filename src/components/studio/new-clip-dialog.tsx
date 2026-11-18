@@ -60,6 +60,106 @@ function isVideoFile(file: File) {
   );
 }
 
+function uploadToR2(
+  url: string,
+  file: File,
+  contentType: string,
+  onProgress: (percent: number) => void
+) {
+  return new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", url);
+    request.setRequestHeader("Content-Type", contentType);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Upload to Cloudflare R2 failed (${request.status}).`));
+      }
+    };
+    request.onerror = () => {
+      reject(new Error("Upload to Cloudflare R2 failed."));
+    };
+    request.onabort = () => {
+      reject(new Error("Upload cancelled."));
+    };
+    request.send(file);
+  });
+}
+
+type UploadConfig = {
+  provider?: "local" | "r2" | "blob";
+  uploadUrl?: string;
+  publicUrl?: string;
+  contentType?: string;
+  error?: string;
+};
+
+async function prepareUpload(
+  file: File,
+  onProgress: (percent: number) => void
+) {
+  const configResponse = await fetch("/api/blob/upload", {
+    cache: "no-store",
+  });
+  const config = (await configResponse.json()) as UploadConfig;
+
+  if (!configResponse.ok) {
+    throw new Error(config.error ?? "Could not prepare the upload.");
+  }
+
+  if (config.provider === "blob") {
+    const blob = await upload(file.name, file, {
+      access: "public",
+      handleUploadUrl: "/api/blob/upload",
+      onUploadProgress: (progress) => {
+        onProgress(Math.round(progress.percentage));
+      },
+    });
+    return blob.url;
+  }
+
+  if (config.provider !== "r2") {
+    throw new Error(
+      config.error ??
+        "Uploads are not configured. Add Cloudflare R2 storage or use a video link."
+    );
+  }
+
+  const presignResponse = await fetch("/api/blob/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type,
+      size: file.size,
+    }),
+  });
+  const presign = (await presignResponse.json()) as UploadConfig;
+
+  if (
+    !presignResponse.ok ||
+    !presign.uploadUrl ||
+    !presign.publicUrl ||
+    !presign.contentType
+  ) {
+    throw new Error(presign.error ?? "Could not prepare the upload.");
+  }
+
+  await uploadToR2(
+    presign.uploadUrl,
+    file,
+    presign.contentType,
+    onProgress
+  );
+  return presign.publicUrl;
+}
+
 function ChoiceChip({
   active,
   onClick,
@@ -147,7 +247,7 @@ export function NewClipDialog({
       return;
     }
     if (!isVideoFile(nextFile)) {
-      toast.error("Choose a video file (MP4, MOV, WebM or MKV).");
+      toast.error("Choose a video file (MP4, MOV, WebM, MKV, M4V or AVI).");
       return;
     }
     if (nextFile.size > MAX_UPLOAD_BYTES) {
@@ -181,18 +281,12 @@ export function NewClipDialog({
         setPhase("uploading");
         setUploadPercent(0);
 
-        const blob = await upload(file.name, file, {
-          access: "public",
-          handleUploadUrl: "/api/blob/upload",
-          onUploadProgress: (progress) => {
-            setUploadPercent(Math.round(progress.percentage));
-          },
-        });
+        const blobUrl = await prepareUpload(file, setUploadPercent);
 
         setPhase("creating");
         body = {
           sourceType: "upload",
-          blobUrl: blob.url,
+          blobUrl,
           title: titleFromFilename(file.name) || "Uploaded video",
           sizeBytes: file.size,
           options,

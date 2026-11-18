@@ -1,4 +1,4 @@
-# Render Free: web-only service. Turso/libSQL holds the queue; Vercel Blob
+# Render Free: web-only service. Turso/libSQL holds the queue; Cloudflare R2
 # holds uploads and clips because Free instances cannot attach a disk.
 services:
   - type: web
@@ -14,10 +14,18 @@ services:
         sync: false
       - key: DATABASE_AUTH_TOKEN
         sync: false
-      - key: BLOB_READ_WRITE_TOKEN
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
         sync: false
       - key: CLIP_STORAGE
-        value: blob
+        value: r2
       - key: WORKER_DISABLED
         value: "1"
       - key: HF_HOME
