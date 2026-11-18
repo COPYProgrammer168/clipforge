@@ -17,12 +17,18 @@ if (process.env.NODE_ENV !== "production") {
   globalForDb.__clipforgeClient = client;
 }
 
-await client.execute("PRAGMA foreign_keys = ON");
-await client.execute("PRAGMA busy_timeout = 5000");
-try {
-  await client.execute("PRAGMA journal_mode = WAL");
-} catch {
-  // Another connection may hold the file; the default journal still works.
+async function applyPragma(statement: string) {
+  try {
+    await client.execute(statement);
+  } catch {
+    // Hosted libSQL may not support every file-oriented pragma.
+  }
+}
+
+await applyPragma("PRAGMA foreign_keys = ON");
+await applyPragma("PRAGMA busy_timeout = 5000");
+if (url.startsWith("file:")) {
+  await applyPragma("PRAGMA journal_mode = WAL");
 }
 
 export const db = drizzle(client, { schema });
