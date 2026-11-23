@@ -90,6 +90,7 @@ export async function downloadVideo(url, dir, onProgress, options = {}) {
   ];
 
   let progress = 0;
+  let destination = "";
   const { stderr } = await runProcess(
     "python",
     [
@@ -123,6 +124,12 @@ export async function downloadVideo(url, dir, onProgress, options = {}) {
       cwd: dir,
       env: pythonEnv,
       onLine: (line) => {
+        const dest = line.match(/^\[download\]\s+Destination:\s+(.+)$/);
+        if (dest) {
+          destination = dest[1].trim();
+          return;
+        }
+        if (/\.(vtt|srt|ass|json)$/i.test(destination)) return;
         const match = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
         if (!match) return;
         const value = Math.min(100, Number(match[1])) / 100;
