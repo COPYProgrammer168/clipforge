@@ -90,7 +90,7 @@ export async function downloadVideo(url, dir, onProgress, options = {}) {
   ];
 
   let progress = 0;
-  await runProcess(
+  const { stderr } = await runProcess(
     "python",
     [
       "-m",
@@ -100,6 +100,9 @@ export async function downloadVideo(url, dir, onProgress, options = {}) {
       "--no-playlist",
       "--newline",
       "--no-warnings",
+      "--ignore-errors",
+      "--sleep-subtitles",
+      "1",
       "--retries",
       "10",
       "--fragment-retries",
@@ -139,7 +142,12 @@ export async function downloadVideo(url, dir, onProgress, options = {}) {
   );
 
   if (candidates.length === 0) {
-    throw new Error("The download finished without producing a video file.");
+    const detail = stderr.trim().slice(-600);
+    throw new Error(
+      `The download finished without producing a video file.${
+        detail ? `\n${detail}` : ""
+      }`
+    );
   }
 
   let chosen = candidates[0];
