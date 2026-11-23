@@ -69,10 +69,25 @@ export function runProcess(command, args, options = {}) {
   });
 }
 
-export async function downloadVideo(url, dir, onProgress) {
+export async function downloadVideo(url, dir, onProgress, options = {}) {
   if (!url) {
     throw new Error("This job has no source URL.");
   }
+
+  const langs = new Set(["km", "km-orig", "en", "en-orig"]);
+  if (options.language) {
+    langs.add(options.language);
+    langs.add(`${options.language}-orig`);
+  }
+  const captionLangs = Array.from(langs).join(",");
+  const captionArgs = [
+    "--write-subs",
+    "--write-auto-subs",
+    "--sub-langs",
+    captionLangs,
+    "--sub-format",
+    "vtt",
+  ];
 
   let progress = 0;
   await runProcess(
@@ -86,8 +101,17 @@ export async function downloadVideo(url, dir, onProgress) {
       "--newline",
       "--no-warnings",
       "--retries",
+      "10",
+      "--fragment-retries",
+      "10",
+      "--extractor-retries",
       "3",
+      "--socket-timeout",
+      "30",
+      "--retry-sleep",
+      "2",
       "--write-info-json",
+      ...captionArgs,
       "-o",
       "source.%(ext)s",
       url,
@@ -111,9 +135,7 @@ export async function downloadVideo(url, dir, onProgress) {
   const candidates = files.filter(
     (file) =>
       file.startsWith("source.") &&
-      !file.endsWith(".json") &&
-      !file.endsWith(".part") &&
-      !file.endsWith(".temp")
+      !/\.(json|part|temp|vtt|srt|ass)$/i.test(file)
   );
 
   if (candidates.length === 0) {
@@ -145,7 +167,11 @@ export async function downloadVideo(url, dir, onProgress) {
     }
   }
 
-  return { file: path.join(dir, chosen), title };
+  const subtitles = files
+    .filter((file) => file.startsWith("source.") && /\.vtt$/i.test(file))
+    .map((file) => path.join(dir, file));
+
+  return { file: path.join(dir, chosen), title, subtitles };
 }
 
 export async function fetchToFile(url, destination) {

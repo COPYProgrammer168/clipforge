@@ -15,7 +15,7 @@ export const faqs = [
   },
   {
     q: "Which languages are supported?",
-    a: "The transcription model can auto-detect language, and the studio lets you choose English, Spanish, Portuguese, French, German, Italian, Dutch, Polish, Turkish, Japanese, Korean, Vietnamese or Khmer. Khmer uses a dedicated fine-tuned speech model.",
+    a: "The studio supports English and Khmer. Khmer uses a dedicated fine-tuned speech model, while English uses the base Whisper model. Clip titles and captions always display in the language of the spoken audio.",
   },
   {
     q: "Can I edit the captions and cuts?",
@@ -93,17 +93,17 @@ export const productPages: Record<string, ProductPage> = {
     eyebrow: "Aspect ratios",
     title: "One recording. Three frame sizes.",
     description:
-      "Choose 9:16, 1:1 or 16:9 when you create a job. Fill the frame with a center crop or keep the whole shot over a blurred background, then render at 1080p. There is no face tracking or keyframe pass.",
+      "Choose 9:16, 1:1, 16:9 or a random mix when you create a job. Fill the frame with a center crop, keep the whole shot over a blurred background, or stack a detected facecam above the gameplay, then render at 1080p. Facecam detection is a sampled heuristic, not frame-by-frame tracking.",
     highlights: [
       {
-        title: "Crop or blurred fill",
+        title: "Crop, blur, or webcam split",
         description:
-          "Crop fills the frame from the center. Blur scales the whole source to fit and fills the sides with a blurred copy, or randomize the choice per clip.",
+          "Crop fills the frame from the center. Blur scales the whole source to fit and fills the sides with a blurred copy. Webcam split puts a detected facecam above the gameplay, and Random can mix all three per clip.",
       },
       {
-        title: "One ratio per job",
+        title: "Fixed or random ratios",
         description:
-          "The ratio is part of the job options. To get another format, create a second job with a different ratio from the same source.",
+          "Pick one ratio for the whole job, or let Random assign 9:16, 1:1 or 16:9 to each clip. Clip time can also be short, long or random.",
       },
       {
         title: "Captions stay attached",
@@ -118,7 +118,7 @@ export const productPages: Record<string, ProductPage> = {
       },
       {
         title: "Render at 1080p",
-        description: "The worker crops or blurs the background, then burns in the caption track.",
+        description: "The worker crops, blurs, or stacks a detected facecam above the gameplay, then burns in the caption track.",
       },
       {
         title: "Download the set",
@@ -128,7 +128,7 @@ export const productPages: Record<string, ProductPage> = {
     stats: [
       { value: "9:16", label: "vertical" },
       { value: "1:1", label: "square" },
-      { value: "16:9", label: "widescreen" },
+      { value: "Random", label: "per-clip mix" },
     ],
   },
   captions: {
@@ -136,12 +136,12 @@ export const productPages: Record<string, ProductPage> = {
     eyebrow: "Captions",
     title: "Burned in, with the SRT to match.",
     description:
-      "Whisper supplies word-level timing. ClipForge turns it into four caption presets, including vertical karaoke with per-word highlighting and custom colors, and exports both a captioned MP4 and a clean SRT.",
+      "Whisper supplies word-level timing. ClipForge turns it into four caption presets plus a random per-clip mix, with three size options, karaoke word highlighting, custom colors, and both a captioned MP4 and a clean SRT.",
     highlights: [
       {
-        title: "Four presets",
+        title: "Four presets, or random",
         description:
-          "Bold, Clean, Boxed and Karaoke are rendered with ffmpeg and ASS. Pick one per job; the worker applies it to every clip.",
+          "Bold, Clean, Boxed and Karaoke are rendered with ffmpeg and ASS. Pick one per job, or let Random assign a style to each clip. Small, Medium and Large control the text size.",
       },
       {
         title: "Karaoke timing",
@@ -161,7 +161,7 @@ export const productPages: Record<string, ProductPage> = {
       },
       {
         title: "Choose a style",
-        description: "Select Bold, Clean, Boxed or Karaoke and pick the caption colors.",
+        description: "Select Bold, Clean, Boxed or Karaoke, choose a caption size, and pick the colors.",
       },
       {
         title: "Take both files",

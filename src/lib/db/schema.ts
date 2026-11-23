@@ -9,7 +9,9 @@ import type {
   AspectRatio,
   BackgroundMode,
   CaptionColors,
+  CaptionSize,
   CaptionStyle,
+  ClipTime,
 } from "@/lib/plans";
 
 export type JobStatus =
@@ -22,8 +24,10 @@ export type JobStatus =
 export type JobOptions = {
   clipCount: number;
   aspectRatio: AspectRatio;
+  clipTime?: ClipTime;
   background?: BackgroundMode;
   captionStyle: CaptionStyle;
+  captionSize?: CaptionSize;
   captionColors?: CaptionColors;
   language: string;
 };

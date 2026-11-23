@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { buildCues, cuesToAss, cuesToSrt } from "./captions.mjs";
@@ -19,7 +20,9 @@ export async function renderClip(options) {
     width,
     height,
     background,
+    webcamBox,
     captionStyle,
+    captionSize,
     captionColors,
     language,
     words,
@@ -28,6 +31,11 @@ export async function renderClip(options) {
 
   const duration = Math.max(2, Math.round(durationSeconds));
   const cues = buildCues(words ?? [], startSeconds, startSeconds + duration, language);
+
+  const fontsDir = path.resolve(process.cwd(), "fonts").replace(/\\/g, "/");
+  const fontsDirArg = existsSync(fontsDir)
+    ? `:fontsdir='${fontsDir.replace(/:/g, "\\:")}'`
+    : "";
 
   const srtName = `${baseName}.srt`;
   const assName = `${baseName}.ass`;
@@ -41,6 +49,7 @@ export async function renderClip(options) {
       width,
       height,
       captionStyle,
+      captionSize,
       captionColors,
       language,
     }),
@@ -68,7 +77,38 @@ export async function renderClip(options) {
       "[blurred][front]overlay=(W-w)/2:(H-h)/2,setsar=1[composed]",
     ];
     if (cues.length > 0) {
-      graph.push(`[composed]ass=${assName}[vout]`);
+      graph.push(`[composed]ass=${assName}${fontsDirArg}[vout]`);
+    } else {
+      graph.push("[composed]null[vout]");
+    }
+    args.push(
+      "-filter_complex",
+      graph.join(";"),
+      "-map",
+      "[vout]"
+    );
+  } else if (background === "webcam" && webcamBox) {
+    const sourceX = Math.max(0, Math.floor(Number(webcamBox.x ?? 0) / 2) * 2);
+    const sourceY = Math.max(0, Math.floor(Number(webcamBox.y ?? 0) / 2) * 2);
+    const sourceWidth = Math.max(
+      2,
+      Math.floor(Number(webcamBox.width ?? 0) / 2) * 2
+    );
+    const sourceHeight = Math.max(
+      2,
+      Math.floor(Number(webcamBox.height ?? 0) / 2) * 2
+    );
+    const topRatio = width > height ? 0.36 : 0.4;
+    const topHeight = Math.max(2, Math.round((height * topRatio) / 2) * 2);
+    const bottomHeight = height - topHeight;
+    const graph = [
+      "[0:v]split=2[facecam][game]",
+      `[facecam]crop=${sourceWidth}:${sourceHeight}:${sourceX}:${sourceY},scale=${width}:${topHeight}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${topHeight},setsar=1[top]`,
+      `[game]scale=${width}:${bottomHeight}:force_original_aspect_ratio=increase:flags=lanczos,crop=${width}:${bottomHeight},setsar=1[bottom]`,
+      "[top][bottom]vstack=inputs=2,setsar=1[composed]",
+    ];
+    if (cues.length > 0) {
+      graph.push(`[composed]ass=${assName}${fontsDirArg}[vout]`);
     } else {
       graph.push("[composed]null[vout]");
     }
@@ -85,7 +125,7 @@ export async function renderClip(options) {
       "setsar=1",
     ];
     if (cues.length > 0) {
-      filters.push(`ass=${assName}`);
+      filters.push(`ass=${assName}${fontsDirArg}`);
     }
     args.push("-vf", filters.join(","), "-map", "0:v:0");
   }

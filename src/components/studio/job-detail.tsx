@@ -20,7 +20,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { LANGUAGES } from "@/lib/plans";
+import {
+  BACKGROUND_LABELS,
+  CAPTION_SIZE_LABELS,
+  CAPTION_STYLE_LABELS,
+  CLIP_TIME_LABELS,
+  LANGUAGES,
+} from "@/lib/plans";
 import type { JobDetailResponse, StudioClip } from "@/lib/studio-types";
 import { cn } from "@/lib/utils";
 
@@ -59,6 +65,7 @@ function activeStep(stage: string) {
       return 1;
     case "scoring":
       return 2;
+    case "framing":
     case "rendering":
       return 3;
     case "uploading":
@@ -401,6 +408,8 @@ export function JobDetail({ jobId }: { jobId: string }) {
   const languageLabel =
     LANGUAGES.find((option) => option.value === job.options.language)?.label ??
     job.options.language;
+  const clipTimeLabel =
+    CLIP_TIME_LABELS[job.options.clipTime ?? "auto"] ?? "Auto";
   const isProcessing = job.status === "queued" || job.status === "processing";
 
   return (
@@ -434,8 +443,19 @@ export function JobDetail({ jobId }: { jobId: string }) {
               </span>
               <span className="inline-flex items-center gap-1.5">
                 {job.options.clipCount} clips · {job.options.aspectRatio} ·{" "}
-                {job.options.background ?? "crop"} background ·{" "}
-                {job.options.captionStyle} captions
+                {clipTimeLabel} clip time ·{" "}
+                {job.options.background
+                  ? BACKGROUND_LABELS[job.options.background] ??
+                    job.options.background
+                  : "Crop"}{" "}
+                background ·{" "}
+                {CAPTION_STYLE_LABELS[job.options.captionStyle] ??
+                  job.options.captionStyle}{" "}
+                captions ·{" "}
+                {CAPTION_SIZE_LABELS[
+                  job.options.captionSize ?? "medium"
+                ] ?? "Medium"}{" "}
+                size
                 {job.options.captionColors ? (
                   <span
                     className="inline-flex items-center gap-1"
@@ -623,8 +643,11 @@ export function JobDetail({ jobId }: { jobId: string }) {
                 {clips.length} clips ready
               </h2>
               <p className="mt-1 text-xs text-white/35">
-                Every export is rendered at {job.options.aspectRatio} with burned
-                captions. Download the MP4 or the SRT.
+                Every export is rendered{" "}
+                {job.options.aspectRatio === "random"
+                  ? "in a random mix of aspect ratios"
+                  : `at ${job.options.aspectRatio}`}{" "}
+                with burned captions. Download the MP4 or the SRT.
               </p>
             </div>
             <span className="hidden items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-lime/60 sm:inline-flex">

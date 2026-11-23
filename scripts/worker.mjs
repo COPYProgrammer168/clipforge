@@ -10,8 +10,10 @@ import {
   probeDuration,
 } from "./pipeline/media.mjs";
 import { transcribe } from "./pipeline/transcribe.mjs";
+import { sourceCaptionsToTranscript } from "./pipeline/source-captions.mjs";
 import { planClips, transcriptUsable } from "./pipeline/score.mjs";
 import { aspectSize, renderClip } from "./pipeline/render.mjs";
+import { detectWebcam } from "./pipeline/webcam.mjs";
 import {
   deleteJobBlobs,
   deleteStoredUrl,
@@ -52,6 +54,16 @@ const clipLimits = {
   maxSeconds: Number(process.env.MAX_CLIP_SECONDS ?? 52),
   targetSeconds: Number(process.env.TARGET_CLIP_SECONDS ?? 30),
 };
+
+const CLIP_TIME_LIMITS = {
+  short: { minSeconds: 8, maxSeconds: 25, targetSeconds: 16 },
+  long: { minSeconds: 40, maxSeconds: 90, targetSeconds: 60 },
+  random: { minSeconds: 8, maxSeconds: 75, targetSeconds: 32, random: true },
+};
+
+function clipTimeLimits(mode) {
+  return CLIP_TIME_LIMITS[mode] ?? clipLimits;
+}
 
 const db = createClient({
   url: DATABASE_URL,
@@ -145,7 +157,15 @@ async function loadJob(jobId) {
   return result.rows[0];
 }
 
-async function insertClip(jobId, userId, index, clip, options) {
+async function insertClip(
+  jobId,
+  userId,
+  index,
+  clip,
+  options,
+  aspectRatio,
+  captionStyle
+) {
   const id = randomUUID();
   await db.execute({
     sql: `INSERT INTO clip
@@ -161,14 +181,23 @@ async function insertClip(jobId, userId, index, clip, options) {
       clip.start,
       clip.end,
       clip.score,
-      options.aspectRatio,
-      options.captionStyle,
+      aspectRatio,
+      captionStyle,
       clip.blobUrl,
       clip.thumbnailUrl,
       clip.srtUrl,
       clip.captionText,
     ],
   });
+}
+
+function seedHash(value) {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 function genericTitle(title) {
@@ -180,16 +209,27 @@ function genericTitle(title) {
   );
 }
 
-function resolveBackground(mode, jobId, clipNumber) {
+function resolveBackground(mode, jobId, clipNumber, hasWebcam) {
   const value = mode ?? "crop";
   if (value !== "random") return value;
+  const choices = hasWebcam
+    ? ["crop", "blur", "webcam"]
+    : ["crop", "blur"];
+  return choices[seedHash(`${jobId}:background:${clipNumber}`) % choices.length];
+}
 
-  let hash = 2166136261;
-  for (const character of `${jobId}:${clipNumber}`) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) % 2 === 0 ? "blur" : "crop";
+function resolveAspectRatio(mode, jobId, clipNumber) {
+  const value = mode ?? "9:16";
+  if (value !== "random") return value;
+  const ratios = ["9:16", "1:1", "16:9"];
+  return ratios[seedHash(`${jobId}:ratio:${clipNumber}`) % ratios.length];
+}
+
+function resolveCaptionStyle(mode, jobId, clipNumber) {
+  const value = mode ?? "bold";
+  if (value !== "random") return value;
+  const styles = ["bold", "clean", "boxed", "karaoke"];
+  return styles[seedHash(`${jobId}:caption-style:${clipNumber}`) % styles.length];
 }
 
 async function processJob(jobId) {
@@ -206,15 +246,21 @@ async function processJob(jobId) {
     await setStage(jobId, "downloading", 3);
 
     let sourcePath;
+    let sourceCaptions = null;
     if (job.sourceType === "url") {
       const downloaded = await downloadVideo(
         String(job.sourceUrl ?? ""),
         workDir,
         (fraction) => {
           void setStage(jobId, "downloading", 3 + fraction * 22);
-        }
+        },
+        { language: String(options.language ?? "en") }
       );
       sourcePath = downloaded.file;
+      sourceCaptions = await sourceCaptionsToTranscript(
+        downloaded.subtitles,
+        String(options.language ?? "en")
+      );
 
       if (downloaded.title && genericTitle(String(job.title))) {
         await db.execute({
@@ -249,28 +295,37 @@ async function processJob(jobId) {
 
     await setStage(jobId, "transcribing", 34);
     let transcript = { language: null, words: [] };
-    try {
-      transcript = await transcribe(audioPath, workDir, {
-        model: WHISPER_MODEL,
-        language: options.language,
-        duration,
-        onProgress: (fraction) => {
-          void setStage(jobId, "transcribing", 34 + fraction * 28);
-        },
-      });
+
+    if (sourceCaptions && transcriptUsable(sourceCaptions.words, duration)) {
+      transcript = sourceCaptions;
+      await setStage(jobId, "transcribing", 62);
       log(
-        `transcribed ${jobId}: ${transcript.words.length} words (${transcript.language ?? "unknown"})`
+        `using source captions for ${jobId}: ${transcript.words.length} words (${transcript.language ?? "unknown"})`
       );
-      if (!transcriptUsable(transcript.words, duration)) {
+    } else {
+      try {
+        transcript = await transcribe(audioPath, workDir, {
+          model: WHISPER_MODEL,
+          language: options.language,
+          duration,
+          onProgress: (fraction) => {
+            void setStage(jobId, "transcribing", 34 + fraction * 28);
+          },
+        });
         log(
-          `transcript for ${jobId} looks unreliable (music or noise); using evenly spaced highlights`
+          `transcribed ${jobId}: ${transcript.words.length} words (${transcript.language ?? "unknown"})`
         );
-        transcript.words = [];
+        if (!transcriptUsable(transcript.words, duration)) {
+          log(
+            `transcript for ${jobId} looks unreliable (music or noise); using evenly spaced highlights`
+          );
+          transcript.words = [];
+        }
+      } catch (error) {
+        log(
+          `transcription failed for ${jobId}; falling back to evenly spaced clips: ${error.message}`
+        );
       }
-    } catch (error) {
-      log(
-        `transcription failed for ${jobId}; falling back to evenly spaced clips: ${error.message}`
-      );
     }
 
     await setStage(jobId, "scoring", 64);
@@ -278,19 +333,54 @@ async function processJob(jobId) {
       transcript.words,
       duration,
       Number(options.clipCount) || 10,
-      clipLimits
+      {
+        ...clipTimeLimits(options.clipTime),
+        language: transcript.language ?? options.language ?? null,
+      }
     );
     if (plan.length === 0) {
       throw new Error("Could not find any usable clip windows in the source.");
     }
 
-    const { width, height } = aspectSize(options.aspectRatio);
+    let webcam = null;
+    if (options.background === "webcam" || options.background === "random") {
+      await setStage(jobId, "framing", 66);
+      webcam = await detectWebcam(sourcePath, workDir);
+      if (webcam) {
+        log(
+          `detected webcam ${jobId} at ${webcam.box.x},${webcam.box.y} ${webcam.box.width}x${webcam.box.height}`
+        );
+      } else {
+        log(`no webcam detected for ${jobId}; using standard framing`);
+      }
+    }
+
     await setStage(jobId, "rendering", 70);
 
     const renderedClips = [];
     for (let index = 0; index < plan.length; index += 1) {
       const item = plan[index];
       const baseName = `clip-${String(index + 1).padStart(2, "0")}`;
+      const aspectRatio = resolveAspectRatio(
+        options.aspectRatio,
+        jobId,
+        index + 1
+      );
+      const captionStyle = resolveCaptionStyle(
+        options.captionStyle,
+        jobId,
+        index + 1
+      );
+      const background =
+        options.background === "webcam" && !webcam
+          ? "crop"
+          : resolveBackground(
+              options.background,
+              jobId,
+              index + 1,
+              Boolean(webcam)
+            );
+      const { width, height } = aspectSize(aspectRatio);
       const rendered = await renderClip({
         sourcePath,
         outDir,
@@ -299,18 +389,17 @@ async function processJob(jobId) {
         durationSeconds: item.end - item.start,
         width,
         height,
-        background: resolveBackground(options.background, jobId, index + 1),
-        captionStyle: options.captionStyle,
+        background,
+        webcamBox: webcam?.box ?? null,
+        captionStyle,
+        captionSize: options.captionSize ?? "medium",
         captionColors: options.captionColors,
-        language:
-          options.language && options.language !== "auto"
-            ? options.language
-            : transcript.language,
+        language: transcript.language ?? options.language ?? null,
         words: transcript.words,
         captionTextFallback: item.title,
       });
 
-      renderedClips.push({ item, rendered });
+      renderedClips.push({ item, rendered, aspectRatio, captionStyle });
 
       await setStage(
         jobId,
@@ -325,7 +414,8 @@ async function processJob(jobId) {
     }
 
     for (let index = 0; index < renderedClips.length; index += 1) {
-      const { item, rendered } = renderedClips[index];
+      const { item, rendered, aspectRatio, captionStyle } =
+        renderedClips[index];
       const urls = await publishClipArtifacts({ jobId, outDir, rendered });
 
       await insertClip(
@@ -333,7 +423,9 @@ async function processJob(jobId) {
         job.userId,
         index + 1,
         { ...item, ...rendered, ...urls },
-        options
+        options,
+        aspectRatio,
+        captionStyle
       );
 
       if (publishToBlob) {

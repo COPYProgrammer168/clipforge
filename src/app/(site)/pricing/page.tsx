@@ -15,7 +15,7 @@ const included = [
   "Unlimited processing minutes",
   "Up to 10 scored clips per video",
   "9:16, 1:1 and 16:9 exports",
-  "Bold, clean and boxed captions",
+  "Bold, clean, boxed and karaoke captions",
   "1080p MP4, SRT and thumbnails",
   "No watermark or export cap",
   "No account or credit card",

@@ -49,7 +49,7 @@ const stats = [
   { value: "2h", label: "maximum source" },
   { value: "10", label: "maximum clips" },
   { value: "3", label: "aspect ratios" },
-  { value: "3", label: "caption presets" },
+  { value: "4", label: "caption presets" },
 ];
 
 export default function Home() {

@@ -21,7 +21,7 @@ RUN apt-get update \
 
 RUN python3 -m venv /opt/venv \
     && pip install --upgrade pip \
-    && pip install faster-whisper==1.2.1 yt-dlp==2026.08.19
+    && pip install faster-whisper==1.2.1 opencv-python-headless==5.0.0.93 yt-dlp==2026.08.19
 
 WORKDIR /app
 

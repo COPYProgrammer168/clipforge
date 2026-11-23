@@ -9,8 +9,11 @@ import { getWorkspaceUserId } from "@/lib/workspace";
 import {
   ASPECT_RATIOS,
   BACKGROUND_MODES,
+  CAPTION_SIZES,
   CAPTION_STYLES,
+  CLIP_TIMES,
   DEFAULT_CAPTION_COLORS,
+  DEFAULT_CAPTION_SIZE,
   MAX_SOURCE_SECONDS,
 } from "@/lib/plans";
 
@@ -39,18 +42,22 @@ const jobSchema = z
       .object({
         clipCount: z.number().int().min(1).max(10).default(10),
         aspectRatio: z.enum(ASPECT_RATIOS).default("9:16"),
+        clipTime: z.enum(CLIP_TIMES).default("auto"),
         background: z.enum(BACKGROUND_MODES).default("crop"),
         captionStyle: z.enum(CAPTION_STYLES).default("bold"),
+        captionSize: z.enum(CAPTION_SIZES).default(DEFAULT_CAPTION_SIZE),
         captionColors: captionColorsSchema,
-        language: z.string().min(2).max(12).default("auto"),
+        language: z.enum(["en", "km"]).default("en"),
       })
       .default({
         clipCount: 10,
         aspectRatio: "9:16",
+        clipTime: "auto",
         background: "crop",
         captionStyle: "bold",
+        captionSize: DEFAULT_CAPTION_SIZE,
         captionColors: DEFAULT_CAPTION_COLORS,
-        language: "auto",
+        language: "en",
       }),
   })
   .superRefine((value, ctx) => {
@@ -186,8 +193,10 @@ export async function POST(request: Request) {
         options: {
           clipCount: parsed.options.clipCount,
           aspectRatio: parsed.options.aspectRatio,
+          clipTime: parsed.options.clipTime,
           background: parsed.options.background,
           captionStyle: parsed.options.captionStyle,
+          captionSize: parsed.options.captionSize,
           captionColors: parsed.options.captionColors,
           language: parsed.options.language,
         },

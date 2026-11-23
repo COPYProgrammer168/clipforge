@@ -25,15 +25,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  ASPECT_RATIO_LABELS,
+  ASPECT_RATIOS,
+  BACKGROUND_DETAILS,
+  BACKGROUND_LABELS,
   BACKGROUND_MODES,
+  CAPTION_SIZE_LABELS,
+  CAPTION_SIZES,
+  CAPTION_STYLE_LABELS,
   CAPTION_STYLES,
+  CLIP_TIME_DETAILS,
+  CLIP_TIME_LABELS,
+  CLIP_TIMES,
   DEFAULT_CAPTION_COLORS,
+  DEFAULT_CAPTION_SIZE,
   LANGUAGES,
   MAX_UPLOAD_BYTES,
   type AspectRatio,
   type BackgroundMode,
   type CaptionColors,
+  type CaptionSize,
   type CaptionStyle,
+  type ClipTime,
 } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
@@ -231,8 +244,11 @@ export function NewClipDialog({
   const [dragging, setDragging] = useState(false);
   const [clipCount, setClipCount] = useState(10);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
+  const [clipTime, setClipTime] = useState<ClipTime>("auto");
   const [background, setBackground] = useState<BackgroundMode>("crop");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("bold");
+  const [captionSize, setCaptionSize] =
+    useState<CaptionSize>(DEFAULT_CAPTION_SIZE);
   const [captionColors, setCaptionColors] = useState<CaptionColors>(
     DEFAULT_CAPTION_COLORS
   );
@@ -269,8 +285,10 @@ export function NewClipDialog({
       const options = {
         clipCount,
         aspectRatio,
+        clipTime,
         background,
         captionStyle,
+        captionSize,
         captionColors,
         language,
       };
@@ -520,17 +538,40 @@ export function NewClipDialog({
                 <Label className="text-[11px] text-white/45">
                   Aspect ratio
                 </Label>
-                <div className="flex gap-1.5">
-                  {(["9:16", "1:1", "16:9"] as const).map((ratio) => (
+                <div className="flex flex-wrap gap-1.5">
+                  {ASPECT_RATIOS.map((ratio) => (
                     <ChoiceChip
                       key={ratio}
                       active={aspectRatio === ratio}
                       onClick={() => setAspectRatio(ratio)}
                     >
-                      {ratio}
+                      {ASPECT_RATIO_LABELS[ratio]}
                     </ChoiceChip>
                   ))}
                 </div>
+                {aspectRatio === "random" ? (
+                  <p className="text-[10px] leading-relaxed text-white/30">
+                    Random mixes 9:16, 1:1 and 16:9 across the clips.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[11px] text-white/45">Clip time</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {CLIP_TIMES.map((time) => (
+                    <ChoiceChip
+                      key={time}
+                      active={clipTime === time}
+                      onClick={() => setClipTime(time)}
+                    >
+                      {CLIP_TIME_LABELS[time]}
+                    </ChoiceChip>
+                  ))}
+                </div>
+                <p className="text-[10px] leading-relaxed text-white/30">
+                  {CLIP_TIME_DETAILS[clipTime]}
+                </p>
               </div>
 
               <div className="space-y-2 sm:col-span-2">
@@ -542,20 +583,16 @@ export function NewClipDialog({
                       active={background === mode}
                       onClick={() => setBackground(mode)}
                     >
-                      {mode[0].toUpperCase() + mode.slice(1)}
+                      {BACKGROUND_LABELS[mode]}
                     </ChoiceChip>
                   ))}
                 </div>
                 <p className="text-[10px] leading-relaxed text-white/30">
-                  {background === "random"
-                    ? "Random mixes center crop and blurred fill across the clips."
-                    : background === "blur"
-                      ? "Fits the whole frame over a blurred fill of the same video."
-                      : "Fills the frame with a center crop."}
+                  {BACKGROUND_DETAILS[background]}
                 </p>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label className="text-[11px] text-white/45">
                   Caption style
                 </Label>
@@ -566,10 +603,36 @@ export function NewClipDialog({
                       active={captionStyle === style}
                       onClick={() => setCaptionStyle(style)}
                     >
-                      {style[0].toUpperCase() + style.slice(1)}
+                      {CAPTION_STYLE_LABELS[style]}
                     </ChoiceChip>
                   ))}
                 </div>
+                {captionStyle === "random" ? (
+                  <p className="text-[10px] leading-relaxed text-white/30">
+                    Random mixes Bold, Clean, Boxed and Karaoke across the
+                    clips.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[11px] text-white/45">
+                  Caption size
+                </Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {CAPTION_SIZES.map((size) => (
+                    <ChoiceChip
+                      key={size}
+                      active={captionSize === size}
+                      onClick={() => setCaptionSize(size)}
+                    >
+                      {CAPTION_SIZE_LABELS[size]}
+                    </ChoiceChip>
+                  ))}
+                </div>
+                <p className="text-[10px] leading-relaxed text-white/30">
+                  Keeps captions readable without covering the footage.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -620,7 +683,9 @@ export function NewClipDialog({
                 <p className="text-[10px] leading-relaxed text-white/30">
                   {captionStyle === "karaoke"
                     ? "Karaoke highlights each spoken word in the active-word color."
-                    : "The active-word color is used by the Karaoke caption style."}
+                    : captionStyle === "random"
+                      ? "Random uses the active-word color on clips that land on Karaoke."
+                      : "The active-word color is used by the Karaoke caption style."}
                 </p>
               </div>
             </div>

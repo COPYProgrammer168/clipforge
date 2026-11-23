@@ -177,6 +177,21 @@ const STOP_WORDS = new Set([
   "yours",
 ]);
 
+function seedHash(value) {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+const RANDOM_TARGETS = [10, 15, 22, 30, 40, 52, 65];
+
+function randomTarget(startSeconds) {
+  return RANDOM_TARGETS[seedHash(String(Math.floor(startSeconds))) % RANDOM_TARGETS.length];
+}
+
 function normalizeToken(value) {
   return value
     .toLowerCase()
@@ -184,8 +199,42 @@ function normalizeToken(value) {
     .replace(/^'+|'+$/g, "");
 }
 
+function joinWords(words) {
+  return words
+    .map((word, index) => {
+      const space = index > 0 && word.spaceBefore !== false ? " " : "";
+      return `${space}${word.text}`;
+    })
+    .join("");
+}
+
+const KHMER_SCRIPT = /[\u1780-\u17FF]/;
+
+function hasKhmerScript(text) {
+  return KHMER_SCRIPT.test(text);
+}
+
+// Khmer is written without spaces between words, so a whitespace word count
+// collapses a whole clause into one token. Counting base consonants instead
+// keeps `transcriptUsable` and `scoreWindow` from treating Khmer speech as a
+// single word or as a wall of noise.
+function countWords(words) {
+  let total = 0;
+  for (const word of words) {
+    if (hasKhmerScript(word.text)) {
+      const bases = (word.text.match(/[\u1780-\u17A2]/gu) ?? []).length;
+      total += Math.max(1, bases);
+    } else if (word.text.trim()) {
+      total += 1;
+    }
+  }
+  return total;
+}
+
 function splitSentences(words) {
   const sentences = [];
+  const khmer = words.some((word) => /[\u1780-\u17FF]/.test(word.text));
+  const maxWords = khmer ? 72 : 28;
   let current = [];
 
   const flush = () => {
@@ -194,7 +243,7 @@ function splitSentences(words) {
       words: current,
       start: current[0].start,
       end: current[current.length - 1].end,
-      text: current.map((word) => word.text).join(" "),
+      text: joinWords(current),
     });
     current = [];
   };
@@ -206,7 +255,7 @@ function splitSentences(words) {
     const gap = next ? next.start - word.end : Number.POSITIVE_INFINITY;
     const terminal = /[.!?\u3002\u17D4\u17D5]$/.test(word.text);
 
-    if (terminal || gap > 0.65 || current.length >= 28) {
+    if (terminal || gap > 0.65 || current.length >= maxWords) {
       flush();
     }
   }
@@ -217,12 +266,12 @@ function splitSentences(words) {
 
 function scoreWindow(words, duration, text, targetSeconds) {
   const tokens = words.map((word) => normalizeToken(word.text)).filter(Boolean);
-  if (tokens.length === 0) return 0;
+  const wordCount = countWords(words);
+  if (wordCount === 0) return 0;
 
-  const totalWords = Math.max(tokens.length, 1);
-  const wordsPerSecond = totalWords / Math.max(duration, 1);
+  const totalWords = Math.max(wordCount, 1);
+  const wordsPerSecond = wordCount / Math.max(duration, 1);
   const firstTokens = tokens.slice(0, 14);
-
   const hookHits = firstTokens.filter((token) => HOOK_WORDS.has(token)).length;
   const startsWithQuestion = /^(how|why|what|when|where|who|is|are|can|do|does)$/.test(
     firstTokens[0] ?? ""
@@ -272,17 +321,38 @@ function scoreWindow(words, duration, text, targetSeconds) {
 }
 
 function buildTitle(text, fallback) {
-  const cleaned = text.replace(/\s+/g, " ").trim();
+  const cleaned = text
+    .replace(/^[\u17B4-\u17D3\u17D2]+/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!cleaned) return fallback;
   const sentence =
     cleaned.split(/(?<=[.!?\u17D4\u17D5])\s/)[0] ?? cleaned;
-  if (sentence.length <= 64) return sentence;
-  const clipped = sentence.slice(0, 64);
-  const lastSpace = clipped.lastIndexOf(" ");
-  return `${(lastSpace > 32 ? clipped.slice(0, lastSpace) : clipped).trim()}\u2026`;
+  // Khmer base consonants (1780-17A2) are the only safe place to clip: cutting
+  // inside a combining cluster would leave a dangling vowel or subscript.
+  const chars = Array.from(sentence);
+  if (chars.length <= 64) return sentence;
+  const clipped = chars.slice(0, 64);
+  if (hasKhmerScript(sentence)) {
+    let cut = clipped.length;
+    while (cut > 0 && !/[\u1780-\u17A2]/.test(clipped[cut - 1])) cut -= 1;
+    if (cut > 32) return `${clipped.slice(0, cut).join("").trim()}\u2026`;
+  }
+  const lastSpace = clipped.join("").lastIndexOf(" ");
+  return `${(lastSpace > 32 ? clipped.slice(0, lastSpace).join("") : clipped.join("")).trim()}\u2026`;
 }
 
-function fallbackPlan(sourceDuration, maxClips, targetSeconds) {
+function fallbackLabel(index, language) {
+  return language === "km" ? `ចំណុចទី ${index + 1}` : `Highlight ${index + 1}`;
+}
+
+function fallbackPlan(
+  sourceDuration,
+  maxClips,
+  targetSeconds,
+  randomize,
+  language
+) {
   const duration = Math.max(3, Math.floor(sourceDuration));
   if (duration <= 8) {
     return [
@@ -290,26 +360,30 @@ function fallbackPlan(sourceDuration, maxClips, targetSeconds) {
         start: 0,
         end: duration,
         score: 0,
-        title: "Highlight 1",
+        title: fallbackLabel(0, language),
       },
     ];
   }
 
   const count = Math.max(1, Math.min(maxClips, 6));
-  const clipLength = Math.min(
-    Math.max(10, targetSeconds),
-    Math.max(10, Math.floor(duration / (count + 1)))
-  );
   const plan = [];
 
   for (let index = 0; index < count; index += 1) {
     const center = Math.round((duration * (index + 1)) / (count + 1));
-    const start = Math.max(0, Math.min(duration - clipLength, center - Math.floor(clipLength / 2)));
+    const desired = randomize ? randomTarget(center) : targetSeconds;
+    const clipLength = Math.min(
+      Math.max(10, desired),
+      Math.max(10, Math.floor(duration / (count + 1)))
+    );
+    const start = Math.max(
+      0,
+      Math.min(duration - clipLength, center - Math.floor(clipLength / 2))
+    );
     plan.push({
       start,
       end: Math.min(duration, start + clipLength),
       score: 0,
-      title: `Highlight ${index + 1}`,
+      title: fallbackLabel(index, language),
     });
   }
 
@@ -319,23 +393,40 @@ function fallbackPlan(sourceDuration, maxClips, targetSeconds) {
 export function transcriptUsable(words, sourceDuration) {
   if (!Array.isArray(words) || words.length < 12) return false;
 
-  const tokens = words.map((word) => normalizeToken(word.text)).filter(Boolean);
-  if (tokens.length < 12) return false;
+  const wordCount = countWords(words);
+  if (wordCount < 12) return false;
 
+  // Khmer words carry no spaces, so uniqueness is measured on base-consonant
+  // clusters rather than whitespace tokens, which would all collapse to one.
+  const khmer = words.some((word) => hasKhmerScript(word.text));
   const frequencies = new Map();
-  for (const token of tokens) {
-    frequencies.set(token, (frequencies.get(token) ?? 0) + 1);
+  for (const word of words) {
+    const text = word.text;
+    if (khmer) {
+      for (const match of text.matchAll(/[\u1780-\u17A2][\u1780-\u17FF]*/gu)) {
+        frequencies.set(match[0], (frequencies.get(match[0]) ?? 0) + 1);
+      }
+    } else {
+      const token = normalizeToken(text);
+      if (token) frequencies.set(token, (frequencies.get(token) ?? 0) + 1);
+    }
   }
 
+  let total = 0;
+  for (const value of frequencies.values()) total += value;
+  if (total === 0) return false;
+
   const topRepeat = Math.max(...frequencies.values());
-  if (topRepeat / tokens.length > 0.3) return false;
-  if (frequencies.size / tokens.length < 0.2) return false;
+  if (topRepeat / total > 0.3) return false;
+  // Khmer clusters recur constantly in natural speech, so the Latin-script
+  // uniqueness threshold would reject good Khmer transcripts.
+  if (frequencies.size / total < (khmer ? 0.06 : 0.2)) return false;
 
   const span = Math.max(
     1,
     (words[words.length - 1].end - words[0].start) || sourceDuration
   );
-  if (tokens.length / span > 7) return false;
+  if (wordCount / span > 7) return false;
 
   return true;
 }
@@ -345,6 +436,8 @@ export function planClips(words, sourceDuration, maxClips, limits = {}) {
   const minSeconds = limits.minSeconds ?? MIN_WINDOW_SECONDS;
   const maxSeconds = limits.maxSeconds ?? MAX_WINDOW_SECONDS;
   const targetSeconds = limits.targetSeconds ?? TARGET_WINDOW_SECONDS;
+  const randomize = Boolean(limits.random);
+  const language = limits.language ?? null;
   const sentences = splitSentences(words);
 
   const candidates = [];
@@ -369,7 +462,12 @@ export function planClips(words, sourceDuration, maxClips, limits = {}) {
           end,
           duration,
           text,
-          score: scoreWindow(windowWords, duration, text, targetSeconds),
+          score: scoreWindow(
+            windowWords,
+            duration,
+            text,
+            randomize ? randomTarget(start) : targetSeconds
+          ),
         });
       }
 
@@ -398,7 +496,13 @@ export function planClips(words, sourceDuration, maxClips, limits = {}) {
   }
 
   if (picked.length === 0) {
-    return fallbackPlan(sourceDuration, limit, targetSeconds);
+    return fallbackPlan(
+      sourceDuration,
+      limit,
+      targetSeconds,
+      randomize,
+      language
+    );
   }
 
   picked.sort((a, b) => a.start - b.start);
@@ -413,7 +517,10 @@ export function planClips(words, sourceDuration, maxClips, limits = {}) {
       start,
       end,
       score: candidate.score,
-      title: buildTitle(candidate.text, `Highlight ${index + 1}`),
+      title: buildTitle(
+        candidate.text,
+        fallbackLabel(index, language)
+      ),
     };
   });
 }

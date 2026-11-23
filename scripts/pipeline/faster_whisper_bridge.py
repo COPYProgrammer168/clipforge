@@ -26,13 +26,34 @@ def main():
     parser.add_argument("--language", default="auto")
     parser.add_argument("--output", required=True)
     parser.add_argument("--beam-size", type=int, default=1)
+    parser.add_argument("--detect-language", action="store_true")
     args = parser.parse_args()
 
     language = None if args.language in (None, "", "auto") else args.language
     audio = load_wav(args.audio)
     model = WhisperModel(args.model, device="cpu", compute_type="int8")
 
-    beam_size = max(args.beam_size, 5) if args.beam_size <= 1 else args.beam_size
+    if args.detect_language:
+        _, info = model.transcribe(
+            audio,
+            language=None,
+            beam_size=1,
+            vad_filter=True,
+            without_timestamps=True,
+        )
+        payload = {
+            "language": info.language,
+            "language_probability": getattr(info, "language_probability", None),
+        }
+        with open(args.output, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        print(
+            f"DETECTED {info.language} {payload['language_probability']}",
+            flush=True,
+        )
+        return
+
+    beam_size = max(args.beam_size, 5)
     transcribe_options = {
         "language": language,
         "beam_size": beam_size,
@@ -49,7 +70,17 @@ def main():
     }
 
     if language == "km":
-        transcribe_options["initial_prompt"] = "សួស្តី នេះជាវីដេអូជាភាសាខ្មែរ"
+        # The shared alignment heads do not fit the Khmer fine-tune: enabling
+        # word timestamps collapses every segment into the last few seconds.
+        # Segment timestamps are accurate without them, so the caption layer
+        # distributes Khmer syllables across each segment instead.
+        transcribe_options.pop("word_timestamps", None)
+        transcribe_options["hallucination_silence_threshold"] = 2.0
+        transcribe_options["repetition_penalty"] = 1.35
+        transcribe_options["no_repeat_ngram_size"] = 3
+        transcribe_options["compression_ratio_threshold"] = 2.0
+        transcribe_options["no_speech_threshold"] = 0.6
+        transcribe_options["log_prob_threshold"] = -1.0
 
     segments, info = model.transcribe(audio, **transcribe_options)
 
@@ -72,6 +103,9 @@ def main():
                 "start": segment.start,
                 "end": segment.end,
                 "text": segment.text,
+                "avg_logprob": getattr(segment, "avg_logprob", None),
+                "no_speech_prob": getattr(segment, "no_speech_prob", None),
+                "compression_ratio": getattr(segment, "compression_ratio", None),
                 "words": words,
             }
         )
