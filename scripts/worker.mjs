@@ -9,7 +9,7 @@ import {
   fetchToFile,
   probeDuration,
 } from "./pipeline/media.mjs";
-import { transcribe } from "./pipeline/transcribe.mjs";
+import { detectSpeech, transcribe } from "./pipeline/transcribe.mjs";
 import { sourceCaptionsToTranscript } from "./pipeline/source-captions.mjs";
 import { planClips, transcriptUsable } from "./pipeline/score.mjs";
 import { aspectSize, renderClip } from "./pipeline/render.mjs";
@@ -246,7 +246,7 @@ async function processJob(jobId) {
     await setStage(jobId, "downloading", 3);
 
     let sourcePath;
-    let sourceCaptions = null;
+    let subtitleFiles = [];
     if (job.sourceType === "url") {
       const downloaded = await downloadVideo(
         String(job.sourceUrl ?? ""),
@@ -257,10 +257,7 @@ async function processJob(jobId) {
         { language: String(options.language ?? "en") }
       );
       sourcePath = downloaded.file;
-      sourceCaptions = await sourceCaptionsToTranscript(
-        downloaded.subtitles,
-        String(options.language ?? "en")
-      );
+      subtitleFiles = downloaded.subtitles ?? [];
 
       if (downloaded.title && genericTitle(String(job.title))) {
         await db.execute({
@@ -292,6 +289,19 @@ async function processJob(jobId) {
     await setStage(jobId, "extracting", 30);
     const audioPath = path.join(workDir, "audio.wav");
     await extractAudio(sourcePath, audioPath);
+
+    let sourceCaptions = null;
+    if (subtitleFiles.length > 0) {
+      const speech = await detectSpeech(audioPath, workDir);
+      if (speech.length > 0) {
+        log(`detected ${speech.length} speech spans for ${jobId}`);
+      }
+      sourceCaptions = await sourceCaptionsToTranscript(
+        subtitleFiles,
+        String(options.language ?? "en"),
+        speech
+      );
+    }
 
     await setStage(jobId, "transcribing", 34);
     let transcript = { language: null, words: [] };

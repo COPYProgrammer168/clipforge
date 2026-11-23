@@ -137,6 +137,47 @@ function tokenWeight(text) {
   return Math.max(1, Array.from(text.replace(/[\s\p{P}\p{S}]/gu, "")).length);
 }
 
+function activeSpeechSpans(start, end, speech) {
+  const spans = [];
+  for (const span of speech ?? []) {
+    const from = Math.max(start, Number(span.start));
+    const to = Math.min(end, Number(span.end));
+    if (Number.isFinite(from) && Number.isFinite(to) && to - from > 0.05) {
+      spans.push([from, to]);
+    }
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  if (spans.length === 0) {
+    spans.push([start, Math.max(start + 0.2, end)]);
+  }
+  return spans;
+}
+
+function tokenRanges(tokens, start, end, speech) {
+  const spans = activeSpeechSpans(start, end, speech);
+  const weights = tokens.map((token) => tokenWeight(token.text));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+  const totalSpan = spans.reduce((sum, [from, to]) => sum + (to - from), 0);
+
+  const timeAt = (offset) => {
+    let remaining = Math.max(0, Math.min(offset, totalSpan));
+    for (const [from, to] of spans) {
+      const length = to - from;
+      if (remaining <= length) return from + remaining;
+      remaining -= length;
+    }
+    return spans[spans.length - 1][1];
+  };
+
+  let consumed = 0;
+  return weights.map((weight) => {
+    const from = timeAt((consumed / totalWeight) * totalSpan);
+    consumed += weight;
+    const to = timeAt((consumed / totalWeight) * totalSpan);
+    return [from, to];
+  });
+}
+
 // A forced Khmer fine-tune can collapse on non-Khmer audio into an endless
 // repeated glyph (e.g. a run of subscript vowels) with no spaces. That is a
 // hallucination, not speech: no real Khmer sentence repeats one sign dozens of
@@ -161,7 +202,7 @@ function textTokens(text, khmer) {
     .map((token) => ({ text: token, spaceBefore: true }));
 }
 
-export function parseTranscript(payload, language) {
+export function parseTranscript(payload, language, speech = []) {
   const words = [];
   const khmer = language === "km" || payload.language === "km";
 
@@ -231,24 +272,15 @@ export function parseTranscript(payload, language) {
 
     const start = Number(segment.start) || 0;
     const end = Number(segment.end) || start;
-    const totalWeight = tokens.reduce(
-      (sum, token) => sum + tokenWeight(token.text),
-      0
-    );
-    let cursor = start;
+    const ranges = tokenRanges(tokens, start, end, speech);
     tokens.forEach((token, index) => {
-      const weight = tokenWeight(token.text);
-      const tokenEnd =
-        index === tokens.length - 1
-          ? end
-          : cursor + ((end - start) * weight) / Math.max(totalWeight, 1);
+      const [tokenStart, tokenEnd] = ranges[index] ?? [end, end];
       pushWord(
         token.text,
-        cursor,
+        tokenStart,
         tokenEnd,
         token.spaceBefore || (index === 0 && words.length > 0)
       );
-      cursor = tokenEnd;
     });
   }
 
@@ -316,6 +348,33 @@ async function detectLanguage(audioPath, outDir, model) {
     language: typeof payload.language === "string" ? payload.language : null,
     probability: Number(payload.language_probability),
   };
+}
+
+export async function detectSpeech(audioPath, outDir) {
+  if (!(await hasFasterWhisper())) return [];
+
+  const outputPath = path.join(outDir, "speech.json");
+
+  try {
+    await runProcess(
+      "python",
+      [bridgePath, audioPath, "--vad-only", "--output", outputPath],
+      { env: pythonEnv }
+    );
+
+    const payload = JSON.parse(await readFile(outputPath, "utf8"));
+    return (payload.speech ?? [])
+      .map((span) => ({ start: Number(span.start), end: Number(span.end) }))
+      .filter(
+        (span) =>
+          Number.isFinite(span.start) &&
+          Number.isFinite(span.end) &&
+          span.end > span.start
+      );
+  } catch (error) {
+    console.warn(`[transcribe] VAD detection failed: ${error.message}`);
+    return [];
+  }
 }
 
 async function transcribeWithWhisperCli(audioPath, outDir, options) {

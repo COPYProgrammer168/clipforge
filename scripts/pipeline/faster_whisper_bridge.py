@@ -4,6 +4,7 @@ import wave
 
 import numpy as np
 from faster_whisper import WhisperModel
+from faster_whisper.vad import VadOptions, get_speech_timestamps
 
 
 def load_wav(path):
@@ -27,10 +28,28 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--beam-size", type=int, default=1)
     parser.add_argument("--detect-language", action="store_true")
+    parser.add_argument("--vad-only", action="store_true")
     args = parser.parse_args()
 
     language = None if args.language in (None, "", "auto") else args.language
     audio = load_wav(args.audio)
+
+    if args.vad_only:
+        speech = get_speech_timestamps(
+            audio,
+            VadOptions(min_silence_duration_ms=300, speech_pad_ms=100),
+        )
+        payload = {
+            "speech": [
+                {"start": item["start"] / 16000, "end": item["end"] / 16000}
+                for item in speech
+            ]
+        }
+        with open(args.output, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        print(f"VAD {len(payload['speech'])}", flush=True)
+        return
+
     model = WhisperModel(args.model, device="cpu", compute_type="int8")
 
     if args.detect_language:
